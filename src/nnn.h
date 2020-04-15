@@ -130,9 +130,9 @@ static struct key bindings[] = {
 	/* Page up */
 	{ KEY_PPAGE,      SEL_PGUP },
 	/* Ctrl+D */
-	{ CONTROL('D'),   SEL_CTRL_D },
+	{ 'J',            SEL_CTRL_D },
 	/* Ctrl+U */
-	{ CONTROL('U'),   SEL_CTRL_U },
+	{ 'K',            SEL_CTRL_U },
 	/* First entry */
 	{ KEY_HOME,       SEL_HOME },
 	{ 'g',            SEL_HOME },
@@ -140,7 +140,6 @@ static struct key bindings[] = {
 	/* Last entry */
 	{ KEY_END,        SEL_END },
 	{ 'G',            SEL_END },
-	{ CONTROL('E'),   SEL_END },
 	/* Go to first file */
 	{ '\'',           SEL_FIRST },
 	/* HOME */
@@ -153,7 +152,6 @@ static struct key bindings[] = {
 	{ '`',            SEL_CDROOT },
 	/* Leader key */
 	{ 'b',            SEL_BOOKMARK },
-	{ CONTROL('_'),   SEL_BOOKMARK },
 	/* Connect to server over SSHFS */
 	{ 'c',            SEL_REMOTE },
 	/* Cycle contexts in forward direction */
