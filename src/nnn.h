@@ -156,8 +156,10 @@ static struct key bindings[] = {
 	{ 'c',            SEL_REMOTE },
 	/* Cycle contexts in forward direction */
 	{ '\t',           SEL_CYCLE },
+	{ '>',            SEL_CYCLE },
 	/* Cycle contexts in reverse direction */
 	{ KEY_BTAB,       SEL_CYCLER },
+	{ '<',            SEL_CYCLE },
 	/* Go to/create context N */
 	{ '1',            SEL_CTX1 },
 	{ '2',            SEL_CTX2 },
@@ -240,7 +242,7 @@ static struct key bindings[] = {
 	/* Manage sessions */
 	{ 's',            SEL_SESSIONS },
 	/* Export list */
-	{ '>',            SEL_EXPORT },
+	//{ '>',            SEL_EXPORT },
 	/* Set time type */
 	{ 'T',            SEL_TIMETYPE },
 	/* Quit a context */
