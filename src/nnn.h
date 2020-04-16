@@ -120,11 +120,13 @@ static struct key bindings[] = {
 	{ KEY_RIGHT,      SEL_NAV_IN },
 	{ 'l',            SEL_NAV_IN },
 	/* Next */
-	{ 'j',            SEL_NEXT },
 	{ KEY_DOWN,       SEL_NEXT },
+	{ 'j',            SEL_NEXT },
+	{ CONTROL('J'),   SEL_NEXT },
 	/* Previous */
-	{ 'k',            SEL_PREV },
 	{ KEY_UP,         SEL_PREV },
+	{ 'k',            SEL_PREV },
+	{ CONTROL('K'),   SEL_PREV },
 	/* Page down */
 	{ KEY_NPAGE,      SEL_PGDN },
 	/* Page up */
@@ -189,11 +191,9 @@ static struct key bindings[] = {
 	/* Redraw window */
 	{ CONTROL('L'),   SEL_REDRAW },
 	/* Select current file path */
-	{ CONTROL('J'),   SEL_SEL },
 	{ ' ',            SEL_SEL },
 	/* Toggle select multiple files */
 	{ 'm',            SEL_SELMUL },
-	{ CONTROL('K'),   SEL_SELMUL },
 	/* Select all files in current dir */
 	{ 'a',            SEL_SELALL },
 	/* List, edit selection */
