@@ -416,9 +416,9 @@ static uint g_states;
 #define UTIL_UNZIP 3
 #define UTIL_TAR 4
 #define UTIL_LOCKER 5
-#define UTIL_CMATRIX 6
-#define UTIL_LAUNCH 7
-#define UTIL_SH_EXEC 8
+#define UTIL_LAUNCH 6
+#define UTIL_SH_EXEC 7
+#define UTIL_BASH 8
 #define UTIL_ARCHIVEMOUNT 9
 #define UTIL_SSHFS 10
 #define UTIL_RCLONE 11
@@ -429,8 +429,7 @@ static uint g_states;
 #define UTIL_FZY 16
 #define UTIL_NTFY 17
 #define UTIL_CBCP 18
-#define UTIL_BASH 19
-#define UTIL_NMV 20
+#define UTIL_NMV 19
 
 /* Utilities to open files, run actions */
 static char * const utils[] = {
@@ -456,9 +455,9 @@ static char * const utils[] = {
 #else
 	"vlock",
 #endif
-	"cmatrix",
 	"launch",
 	"sh -c",
+	"bash",
 	"archivemount",
 	"sshfs",
 	"rclone",
@@ -469,7 +468,6 @@ static char * const utils[] = {
 	"fzy",
 	".ntfy",
 	".cbcp",
-	"bash",
 	".nmv",
 };
 
@@ -517,8 +515,9 @@ static char * const utils[] = {
 #define MSG_RM_TMP 40
 #define MSG_NOCHNAGE 41
 #define MSG_CANCEL 42
+#define MSG_FIRST 43
 #ifndef DIR_LIMITED_SELECTION
-#define MSG_DIR_CHANGED 43 /* Must be the last entry */
+#define MSG_DIR_CHANGED 44 /* Must be the last entry */
 #endif
 
 static const char * const messages[] = {
@@ -565,6 +564,7 @@ static const char * const messages[] = {
 	"remove tmp file?",
 	"unchanged",
 	"cancelled",
+	"first file (\')/char?",
 #ifndef DIR_LIMITED_SELECTION
 	"dir changed, range sel off", /* Must be the last entry */
 #endif
@@ -3969,12 +3969,7 @@ static bool unmount(char *name, char *newpath, int *presel, char *currentpath)
 
 static void lock_terminal(void)
 {
-	char *tmp = utils[UTIL_LOCKER];
-
-	if (!getutil(tmp))
-		tmp = utils[UTIL_CMATRIX];
-
-	spawn(tmp, NULL, NULL, NULL, F_NORMAL);
+	spawn(xgetenv("NNN_LOCKER", utils[UTIL_LOCKER]), NULL, NULL, NULL, F_CLI);
 }
 
 static void printkv(kv *kvarr, FILE *fp, uchar max)
@@ -4056,7 +4051,7 @@ static void show_help(const char *path)
 		"1        f ^F  File details           d  Detail mode toggle\n"
 		"1          ^R  Rename/dup             r  Batch rename\n"
 		"1           z  Archive                e  Edit in EDITOR\n"
-		"5Space ^J  (Un)select               m ^K  Mark range/clear\n"
+		"5Space ^J  (Un)select              m ^K  Mark range/clear\n"
 		"1        p ^P  Copy sel here          a  Select all\n"
 		"1        v ^V  Move sel here       w ^W  Cp/mv sel as\n"
 		"1        x ^X  Delete                 E  Edit sel\n"
@@ -4639,8 +4634,17 @@ static void handle_screen_move(enum action sel)
 		break;
 	default: /* case SEL_FIRST */
 	{
-		for (int r = 0; r < ndents; ++r) {
-			if (!(dents[r].flags & DIR_OR_LINK_TO_DIR)) {
+		int c = get_input(messages[MSG_FIRST]);
+		if (!c)
+			break;
+
+		c = TOUPPER(c);
+
+		int r = (c == TOUPPER(*dents[cur].name)) ? (cur + 1) : 0;
+
+		for (; r < ndents; ++r) {
+			if (((c == '\'') && !(dents[r].flags & DIR_OR_LINK_TO_DIR))
+			    || (c == TOUPPER(*dents[r].name))) {
 				move_cursor((r) % ndents, 0);
 				break;
 			}
@@ -4913,8 +4917,6 @@ static void redraw(char *path)
 	xlines = LINES;
 	xcols = COLS;
 
-	DPRINTF_S(__FUNCTION__);
-
 	int ncols = (xcols <= PATH_MAX) ? xcols : PATH_MAX;
 	int onscreen = xlines - 4;
 	int i;
@@ -4927,6 +4929,8 @@ static void redraw(char *path)
 		if (ndents && (last_curscroll == curscroll))
 			return draw_line(path, ncols);
 	}
+
+	DPRINTF_S(__FUNCTION__);
 
 	/* Clear screen */
 	erase();
@@ -5137,7 +5141,9 @@ begin:
 #endif
 
 	while (1) {
-		redraw(path);
+		/* Do not do a double redraw in filterentries */
+		if ((presel != FILTER) || !filterset())
+			redraw(path);
 
 		/* Display a one-time message */
 		if (listpath && (g_states & STATE_MSG)) {
@@ -5430,7 +5436,8 @@ nochange:
 		case SEL_END: // fallthrough
 		case SEL_FIRST:
 			g_states |= STATE_MOVE_OP;
-			handle_screen_move(sel);
+			if (ndents)
+				handle_screen_move(sel);
 			break;
 		case SEL_CDHOME: // fallthrough
 		case SEL_CDBEGIN: // fallthrough
@@ -5662,8 +5669,10 @@ nochange:
 			/* In case of successful operation, reload contents */
 
 			/* Continue in type-to-nav mode, if enabled */
-			if ((cfg.filtermode || filterset()) && !refresh)
-				break;
+			if ((cfg.filtermode || filterset()) && !refresh) {
+				presel = FILTER;
+				goto nochange;
+			}
 
 			/* Save current */
 			if (ndents)
