@@ -143,7 +143,7 @@ static struct key bindings[] = {
 	{ KEY_END,        SEL_END },
 	{ 'G',            SEL_END },
 	/* Go to first file */
-	{ '\'',           SEL_FIRST },
+	{ 'f',            SEL_FIRST },
 	/* HOME */
 	{ '~',            SEL_CDHOME },
 	/* Initial directory */
@@ -179,8 +179,7 @@ static struct key bindings[] = {
 	/* Detailed listing */
 	{ 'd',            SEL_DETAIL },
 	/* File details */
-	{ 'f',            SEL_STATS },
-	{ CONTROL('F'),   SEL_STATS },
+	{ 'i',            SEL_STATS },
 	/* Toggle executable status */
 	{ '*',            SEL_CHMODX },
 	/* Create archive */
