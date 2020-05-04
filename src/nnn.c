@@ -514,8 +514,9 @@ static char * const utils[] = {
 #define MSG_RM_TMP 40
 #define MSG_NOCHNAGE 41
 #define MSG_CANCEL 42
+#define MSG_0_ENTRIES 43
 #ifndef DIR_LIMITED_SELECTION
-#define MSG_DIR_CHANGED 43 /* Must be the last entry */
+#define MSG_DIR_CHANGED 44 /* Must be the last entry */
 #endif
 
 static const char * const messages[] = {
@@ -1174,14 +1175,14 @@ static size_t seltofile(int fd, uint *pcount)
 
 	if (listpath) {
 		prefixlen = (ssize_t)xstrlen(prefixpath);
-		initlen = (ssize_t)xstrlen(initpath);
+		initlen = (ssize_t)xstrlen(listpath);
 	}
 
 	while (pos <= lastpos) {
 		DPRINTF_S(pbuf);
 		len = (ssize_t)xstrlen(pbuf);
 
-		if (!listpath || strncmp(initpath, pbuf, initlen) != 0) {
+		if (!listpath || !is_prefix(pbuf, listpath, initlen)) {
 			if (write(fd, pbuf, len) != len)
 				return pos;
 		} else {
@@ -3064,10 +3065,6 @@ static wchar_t *unescape(const char *str, uint maxcols)
 	wchar_t *buf = wbuf;
 	size_t lencount = 0;
 
-#ifdef NOLOCALE
-	memset(wbuf, 0, (NAME_MAX + 1) * sizeof(wchar_t));
-#endif
-
 	/* Convert multi-byte to wide char */
 	size_t len = mbstowcs(wbuf, str, NAME_MAX);
 
@@ -4089,7 +4086,7 @@ static void show_help(const char *path)
 		"1     Up k ^K  Up                PgUp K  Scroll up\n"
 		"1     Dn j ^J  Down              PgDn J  Scroll down\n"
 		"1        Lt h  Parent           ~ ` @ -  HOME, /, start, last\n"
-		"1    Ret Rt l  Open                   f  First file\n"
+		"1    Ret Rt l  Open                   f  First file/match\n"
 		"1        g ^A  Top                 . F5  Toggle hidden\n"
 		"1        G ^E  End                    0  Lock terminal\n"
 		"1        b ^/  Bookmark key           ,  Pin CWD\n"
@@ -5466,12 +5463,12 @@ nochange:
 
 				if (cfg.useeditor
 #ifdef FILE_MIME_OPTS
-				    (get_output(g_buf, CMD_LEN_MAX, "file", FILE_MIME_OPTS, newpath, FALSE)
-				    && !(((int *)g_buf)[0] == *(int *)"text" && g_buf[4] == '/')))) {
+					&& get_output(g_buf, CMD_LEN_MAX, "file", FILE_MIME_OPTS, newpath, FALSE)
+					&& is_prefix(g_buf, "text/", 5)
 #else
-				    /* no mime option; guess from description instead */
-				    && get_output(g_buf, CMD_LEN_MAX, "file", "-b", newpath, FALSE)
-				    && strstr(g_buf, "text")
+					/* no mime option; guess from description instead */
+					&& get_output(g_buf, CMD_LEN_MAX, "file", "-b", newpath, FALSE)
+					&& strstr(g_buf, "text")
 #endif
 				) {
 					spawn(editor, newpath, NULL, path, F_CLI);
@@ -6523,7 +6520,7 @@ static char *load_input(int fd, char *path)
 	DPRINTF_D(chunk_count);
 
 	if (!entries) {
-		fprintf(stderr, "0 entries\n");
+		msgnum = MSG_0_ENTRIES;
 		goto malloc_1;
 	}
 
@@ -6911,7 +6908,7 @@ int main(int argc, char *argv[])
 	/* Check if we are in path list mode */
 	if (!isatty(STDIN_FILENO)) {
 		/* This is the same as listpath */
-		initpath = load_input();
+		initpath = load_input(STDIN_FILENO, NULL);
 		if (!initpath)
 			return _FAILURE;
 
@@ -7122,9 +7119,9 @@ int main(int argc, char *argv[])
 	} else if (selpath)
 		unlink(selpath);
 
+
 	/* Remove tmp dir in list mode */
-	if (listpath)
-		spawn("rm -rf", initpath, NULL, NULL, F_NOTRACE | F_MULTI);
+	rmlistpath();
 
 	/* Free the regex */
 #ifdef PCRE
