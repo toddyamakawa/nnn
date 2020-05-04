@@ -529,7 +529,7 @@ static const char * const messages[] = {
 	"'c'p / 'm'v as?",
 	"'c'urrent / 's'el?",
 	"rm -rf %s file%s?",
-	"limit exceeded\n",
+	"limit exceeded",
 	"'f'ile / 'd'ir / 's'ym / 'h'ard?",
 	"'c'li / 'g'ui?",
 	"overwrite?",
@@ -562,6 +562,7 @@ static const char * const messages[] = {
 	"unchanged",
 	"cancelled",
 	"first file (\')/char?",
+	"0 entries",
 #ifndef DIR_LIMITED_SELECTION
 	"dir changed, range sel off", /* Must be the last entry */
 #endif
@@ -691,6 +692,7 @@ static inline bool getutil(char *util);
 static size_t mkpath(const char *dir, const char *name, char *out);
 static char *xgetenv(const char *name, char *fallback);
 static bool plugscript(const char *plugin, const char *path, uchar flags);
+static char *load_input(int fd, char *path);
 
 /* Functions */
 
@@ -945,7 +947,7 @@ static char *xstrdup(const char *restrict s)
 	return ptr;
 }
 
-static bool is_suffix(const char *str, const char *suffix)
+static bool is_suffix(const char *restrict str, const char *restrict suffix)
 {
 	if (!str || !suffix)
 		return FALSE;
@@ -957,6 +959,11 @@ static bool is_suffix(const char *str, const char *suffix)
 		return FALSE;
 
 	return (xstrcmp(str + (lenstr - lensuffix), suffix) == 0);
+}
+
+static bool is_prefix(const char *restrict str, const char *restrict prefix, size_t len)
+{
+	return !strncmp(str, prefix, len);
 }
 
 /*
@@ -1993,11 +2000,12 @@ static void archive_selection(const char *cmd, const char *archive, const char *
 
 	snprintf(buf, CMD_LEN_MAX,
 #ifdef __linux__
-		"sed -ze 's|^%s/||' '%s' | xargs -0 %s %s", curpath, selpath, cmd, archive);
+		"sed -ze 's|^%s/||' '%s' | xargs -0 %s %s", curpath, selpath, cmd, archive
 #else
 		"tr '\\0' '\n' < '%s' | sed -e 's|^%s/||' | tr '\n' '\\0' | xargs -0 %s %s",
-		selpath, curpath, cmd, archive);
+		selpath, curpath, cmd, archive
 #endif
+		);
 	spawn(utils[UTIL_SH_EXEC], buf, NULL, curpath, F_CLI);
 	free(buf);
 }
@@ -2132,7 +2140,7 @@ static int xstrverscasecmp(const char * const s1, const char * const s2)
 		state += (c1 == '0') + (xisdigit(c1) != 0);
 	}
 
-	state = (uchar)result_type[state * 3 + (((c2 == '0') + (xisdigit(c2) != 0)))];
+	state = result_type[state * 3 + (((c2 == '0') + (xisdigit(c2) != 0)))]; // NOLINT
 
 	switch (state) {
 	case VCMP:
@@ -3049,6 +3057,7 @@ static void resetdircolor(int flags)
  * Adjust string length to maxcols if > 0;
  * Max supported str length: NAME_MAX;
  */
+#ifndef NOLOCALE
 static wchar_t *unescape(const char *str, uint maxcols)
 {
 	wchar_t * const wbuf = (wchar_t *)g_buf;
@@ -3091,6 +3100,19 @@ static wchar_t *unescape(const char *str, uint maxcols)
 
 	return wbuf;
 }
+#else
+static char *unescape(const char *str, uint maxcols)
+{
+	ssize_t len = (ssize_t)xstrsncpy(g_buf, str, maxcols);
+
+	--len;
+	while (--len >= 0)
+		if (g_buf[len] <= '\x1f' || g_buf[len] == '\x7f')
+			g_buf[len] = '\?';
+
+	return g_buf;
+}
+#endif
 
 static char *coolsize(off_t size)
 {
@@ -3241,7 +3263,11 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 
 	if (attrs)
 		attron(attrs);
+#ifndef NOLOCALE
 	addwstr(unescape(ent->name, namecols));
+#else
+	addstr(unescape(ent->name, MIN(namecols, ent->nlen) + 1));
+#endif
 	if (attrs)
 		attroff(attrs);
 
@@ -3326,7 +3352,11 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 		attroff(A_DIM);
 		attrs ^=  A_DIM;
 	}
+#ifndef NOLOCALE
 	addwstr(unescape(ent->name, namecols));
+#else
+	addstr(unescape(ent->name, MIN(namecols, ent->nlen) + 1));
+#endif
 	if (attrs)
 		attroff(attrs);
 	if (ind2)
@@ -3851,10 +3881,7 @@ static bool remote_mount(char *newpath, char *currentpath)
 	uchar flag = F_CLI;
 	int opt;
 	char *tmp, *env;
-	bool r, s;
-
-	r = getutil(utils[UTIL_RCLONE]);
-	s = getutil(utils[UTIL_SSHFS]);
+	bool r = getutil(utils[UTIL_RCLONE]), s = getutil(utils[UTIL_SSHFS]);
 
 	if (!(r || s)) {
 		printmsg(messages[MSG_UTIL_MISSING]);
@@ -4200,17 +4227,82 @@ static bool plctrl_init(void)
 	return _SUCCESS;
 }
 
+static void rmlistpath()
+{
+	if (listpath) {
+		DPRINTF_S(__FUNCTION__);
+		DPRINTF_S(listpath);
+		spawn("rm -rf", listpath, NULL, NULL, F_NOTRACE | F_MULTI);
+		free(listpath);
+		listpath = NULL;
+	}
+}
+
+static void readpipe(int fd, char **path, char **lastname, char **lastdir)
+{
+	int r;
+	char ctx, *nextpath = NULL;
+	ssize_t len = read(fd, g_buf, 1);
+
+	if (len != 1)
+		return;
+
+	if (g_buf[0] == '+') {
+		r = cfg.curctx;
+		do
+			r = (r + 1) & ~CTX_MAX;
+		while (g_ctx[r].c_cfg.ctxactive && (r != cfg.curctx));
+		ctx = r + 1;
+	} else {
+		ctx = g_buf[0] - '0';
+		if (ctx > CTX_MAX)
+			return;
+	}
+
+	len = read(fd, g_buf, 1);
+	if (len != 1)
+		return;
+
+	char op = g_buf[0];
+
+	if (op == 'c') {
+		len = read(fd, g_buf, PATH_MAX);
+		if (len <= 0)
+			return;
+
+		nextpath = g_buf;
+	} else if (op == 'l') {
+		/* Remove last list mode path, if any */
+		rmlistpath();
+
+		nextpath = load_input(fd, *path);
+	}
+
+	if (nextpath) {
+		if (ctx == 0 || ctx == cfg.curctx + 1) {
+			xstrsncpy(*lastdir, *path, PATH_MAX);
+			xstrsncpy(*path, nextpath, PATH_MAX);
+		} else {
+			r = ctx - 1;
+
+			g_ctx[r].c_cfg.ctxactive = 0;
+			savecurctx(&cfg, nextpath, dents[cur].name, r);
+			*path = g_ctx[r].c_path;
+			*lastdir = g_ctx[r].c_last;
+			*lastname = g_ctx[r].c_name;
+		}
+	}
+}
+
 static bool run_selected_plugin(char **path, const char *file, char *runfile, char **lastname, char **lastdir)
 {
-	int fd;
-	size_t len;
-
 	if (!(g_states & STATE_PLUGIN_INIT)) {
 		plctrl_init();
 		g_states |= STATE_PLUGIN_INIT;
 	}
 
-	fd = open(g_pipepath, O_RDONLY | O_NONBLOCK);
+	int fd = open(g_pipepath, O_RDONLY | O_NONBLOCK);
+
 	if (fd == -1)
 		return FALSE;
 
@@ -4230,27 +4322,9 @@ static bool run_selected_plugin(char **path, const char *file, char *runfile, ch
 			spawn(g_buf, NULL, *path, *path, F_NORMAL);
 	}
 
-	len = read(fd, g_buf, PATH_MAX);
-	g_buf[len] = '\0';
+	readpipe(fd, path, lastname, lastdir);
+
 	close(fd);
-
-	if (len > 1) {
-		int ctx = g_buf[0] - '0';
-
-		if (ctx == 0 || ctx == cfg.curctx + 1) {
-			xstrsncpy(*lastdir, *path, PATH_MAX);
-			xstrsncpy(*path, g_buf + 1, PATH_MAX);
-		} else if (ctx >= 1 && ctx <= CTX_MAX) {
-			int r = ctx - 1;
-
-			g_ctx[r].c_cfg.ctxactive = 0;
-			savecurctx(&cfg, g_buf + 1, dents[cur].name, r);
-			*path = g_ctx[r].c_path;
-			*lastdir = g_ctx[r].c_last;
-			*lastname = g_ctx[r].c_name;
-		}
-	}
-
 	return TRUE;
 }
 
@@ -4598,15 +4672,17 @@ static void populate(char *path, char *lastname)
 
 static void move_cursor(int target, int ignore_scrolloff)
 {
-	int delta, scrolloff, onscreen = xlines - 4;
+	int onscreen = xlines - 4; /* Leave top 2 and bottom 2 lines */
 
-	last_curscroll = curscroll;
 	target = MAX(0, MIN(ndents - 1, target));
-	delta = target - cur;
+	last_curscroll = curscroll;
 	last = cur;
 	cur = target;
+
 	if (!ignore_scrolloff) {
-		scrolloff = MIN(SCROLLOFF, onscreen >> 1);
+		int delta = target - last;
+		int scrolloff = MIN(SCROLLOFF, onscreen >> 1);
+
 		/*
 		 * When ignore_scrolloff is 1, the cursor can jump into the scrolloff
 		 * margin area, but when ignore_scrolloff is 0, act like a boa
@@ -5383,22 +5459,23 @@ nochange:
 					}
 				}
 
-				if (cfg.useeditor && (!sb.st_size ||
+				if (!sb.st_size) {
+					printwait(messages[MSG_EMPTY_FILE], &presel);
+					goto nochange;
+				}
+
+				if (cfg.useeditor
 #ifdef FILE_MIME_OPTS
 				    (get_output(g_buf, CMD_LEN_MAX, "file", FILE_MIME_OPTS, newpath, FALSE)
 				    && !(((int *)g_buf)[0] == *(int *)"text" && g_buf[4] == '/')))) {
 #else
 				    /* no mime option; guess from description instead */
-				    (get_output(g_buf, CMD_LEN_MAX, "file", "-b", newpath, FALSE)
-				    && strstr(g_buf, "text")))) {
+				    && get_output(g_buf, CMD_LEN_MAX, "file", "-b", newpath, FALSE)
+				    && strstr(g_buf, "text")
 #endif
+				) {
 					spawn(editor, newpath, NULL, path, F_CLI);
 					continue;
-				}
-
-				if (!sb.st_size) {
-					printwait(messages[MSG_EMPTY_FILE], &presel);
-					goto nochange;
 				}
 
 #ifdef PCRE
@@ -5662,10 +5739,9 @@ nochange:
 				if (!(getutil(utils[UTIL_BASH])
 				      && plugscript(utils[UTIL_NMV], path, F_CLI))
 #ifndef NOBATCH
-				    && !batch_rename(path)) {
-#else
-				) {
+				    && !batch_rename(path)
 #endif
+				) {
 					printwait(messages[MSG_FAILED], &presel);
 					goto nochange;
 				}
@@ -6300,7 +6376,7 @@ static char *make_tmp_tree(char **paths, ssize_t entries, const char *prefix)
 	struct stat sb;
 	char *slash, *tmp;
 	ssize_t len = xstrlen(prefix);
-	char *tmpdir = malloc(sizeof(char) * (PATH_MAX + TMP_LEN_MAX));
+	char *tmpdir = malloc(PATH_MAX);
 
 	if (!tmpdir) {
 		DPRINTF_S(strerror(errno));
@@ -6359,7 +6435,7 @@ static char *make_tmp_tree(char **paths, ssize_t entries, const char *prefix)
 	return tmpdir;
 }
 
-static char *load_input()
+static char *load_input(int fd, char *path)
 {
 	/* 512 KiB chunk size */
 	ssize_t i, chunk_count = 1, chunk = 512 * 1024, entries = 0;
@@ -6368,19 +6444,23 @@ static char *load_input()
 	size_t offsets[LIST_FILES_MAX];
 	char **paths = NULL;
 	ssize_t input_read, total_read = 0, off = 0;
+	int msgnum = 0;
 
 	if (!input) {
 		DPRINTF_S(strerror(errno));
 		return NULL;
 	}
 
-	if (!getcwd(cwd, PATH_MAX)) {
-		free(input);
-		return NULL;
-	}
+	if (!path) {
+		if (!getcwd(cwd, PATH_MAX)) {
+			free(input);
+			return NULL;
+		}
+	} else
+		xstrsncpy(cwd, path, PATH_MAX);
 
 	while (chunk_count < 512) {
-		input_read = read(STDIN_FILENO, input + total_read, chunk);
+		input_read = read(fd, input + total_read, chunk);
 		if (input_read < 0) {
 			DPRINTF_S(strerror(errno));
 			goto malloc_1;
@@ -6403,7 +6483,7 @@ static char *load_input()
 			}
 
 			if (entries == LIST_FILES_MAX) {
-				fprintf(stderr, messages[MSG_LIMIT], NULL);
+				msgnum = MSG_LIMIT;
 				goto malloc_1;
 			}
 
@@ -6412,7 +6492,7 @@ static char *load_input()
 		}
 
 		if (chunk_count == 512) {
-			fprintf(stderr, messages[MSG_LIMIT], NULL);
+			msgnum = MSG_LIMIT;
 			goto malloc_1;
 		}
 
@@ -6431,7 +6511,7 @@ static char *load_input()
 
 	if (off != total_read) {
 		if (entries == LIST_FILES_MAX) {
-			fprintf(stderr, messages[MSG_LIMIT], NULL);
+			msgnum = MSG_LIMIT;
 			goto malloc_1;
 		}
 
@@ -6495,6 +6575,13 @@ malloc_2:
 	for (i = entries - 1; i >= 0; --i)
 		free(paths[i]);
 malloc_1:
+	if (msgnum) {
+		if (g_states & STATE_PLUGIN_INIT) {
+			printmsg(messages[msgnum]);
+			xdelay(XDELAY_INTERVAL_MS);
+		} else
+			fprintf(stderr, "%s\n", messages[msgnum]);
+	}
 	free(input);
 	free(paths);
 	return tmpdir;
@@ -6878,7 +6965,7 @@ int main(int argc, char *argv[])
 		} else {
 			arg = argv[optind];
 			DPRINTF_S(arg);
-			if (xstrlen(arg) > 7 && !strncmp(arg, "file://", 7))
+			if (xstrlen(arg) > 7 && is_prefix(arg, "file://", 7))
 				arg = arg + 7;
 			initpath = realpath(arg, NULL);
 			DPRINTF_S(initpath);
