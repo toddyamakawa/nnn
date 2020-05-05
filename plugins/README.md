@@ -32,11 +32,12 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 | chksum | Create and verify checksums | sh | md5sum,<br>sha256sum |
 | diffs | Diff for selection (limited to 2 for directories) | sh | vimdiff |
 | dragdrop | Drag/drop files from/into nnn | sh | [dragon](https://github.com/mwh/dragon) |
+| finder | Run custom find command and list | sh | - |
 | fzcd | Change to the directory of a fuzzy-selected file/dir | sh | fzf/fzy<br>fd/fdfind/find |
 | fzhist | Fuzzy-select a cmd from history, edit in `$EDITOR` and run | sh | fzf/fzy |
 | fzopen | Fuzzy find a file in dir subtree and edit or open | sh | fzf/fzy, xdg-open |
 | fzz | Change to any directory in the z database with fzf/fzy | sh | fzf/fzy, z |
-| getplugs | Update plugins | sh | curl |
+| getplugs | Update plugins to installed `nnn` version | sh | curl |
 | gutenread | Browse, download, read from Project Gutenberg | sh | curl, unzip, w3m<br>[epr](https://github.com/wustho/epr) (optional) |
 | hexview | View a file in hex in `$PAGER` | sh | xxd |
 | imgresize | Resize images in dir to screen resolution | sh | [imgp](https://github.com/jarun/imgp) |
@@ -47,6 +48,7 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 | kdeconnect | Send selected files to an Android device | sh | kdeconnect-cli |
 | launch | GUI application launcher | sh | fzf/fzy |
 | mediainf | Show media information | sh | mediainfo |
+| mimelist | List files by mime in subtree | sh | fd/find |
 | moclyrics | Show lyrics of the track playing in moc | sh | [ddgr](https://github.com/jarun/ddgr), [moc](http://moc.daper.net/) |
 | mocplay | Append (and/or play) selection/dir/file in moc | sh | [moc](http://moc.daper.net/) |
 | mp3conv | Extract audio from multimedia as mp3 | sh | ffmpeg |
@@ -160,21 +162,45 @@ Plugins can be written in any scripting language. However, POSIX-compliant shell
 
 Drop the plugin in `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins` and make it executable. Optionally add a hotkey in `$NNN_PLUG` for frequent usage.
 
-#### Controlling `nnn`'s active directory
-`nnn` provides a mechanism for plugins to control its active directory.
+#### Send data to `nnn`
+`nnn` provides a mechanism for plugins to send data to `nnn` to control its active directory or invoke the list mode.
 The way to do so is by writing to the pipe pointed by the environment variable `NNN_PIPE`.
-The plugin should write a single string in the format `<number><path>` without a newline at the end. For example, `1/etc`.
-The number indicates the context to change the active directory of (0 is used to indicate the current context).
+The plugin should write a single string in the format `<ctxcode><opcode><data>` without a newline at the end. For example, `1c/etc`.
+
+The `ctxcode` indicates the context to change the active directory of.
+
+| Context code | Meaning |
+|:---:| --- |
+| `1`-`4` | context number |
+| `0` | current context |
+| `+` | smart context (next inactive else current) |
+
+The `opcode` indicates the operation type.
+
+| Opcode | Operation |
+|:---:| --- |
+| `c` | change directory |
+| `l` | list files in list mode |
 
 For convenience, we provided a helper script named `.nnn-plugin-helper` and a function named `nnn_cd` to ease this process. `nnn_cd` receives the path to change to as the first argument, and the context as an optional second argument.
 If a context is not provided, it is asked for explicitly. To skip this and choose the current context, set the `CUR_CTX` variable in `.nnn-plugin-helper` to `1`.
 Usage examples can be found in the Examples section below.
 
+#### Get notified on file hover
+
+If `NNN_FIFO` is set, `nnn` will open it and write every hovered files. This can be used in plugins, e.g. to implement file previews.
+
+If a `NNN_FIFO` is set globally, each `nnn` instance will write to it, and a process reading from the pipe will get hovered path from every instance, interleaved.
+
+If you want to prevent this and be sure to have a private pipe to one `nnn` instance, you can unlink (remove) the FIFO file. If you had opened the FIFO before and you have read from it (so that `nnn` have it opened too), you can still read from it while you don't close it. But new `nnn` instances will recreate a new FIFO not linked to the previous one.
+
+Don't forget to fork in the background to avoid blocking `nnn`.
+
 #### Examples
 There are many plugins provided by `nnn` which can be used as examples. Here are a few simple selected examples.
 
 - Show the git log of changes to the particular file along with the code for a quick and easy review.
-   ```sh
+    ```sh
     #!/usr/bin/env sh
     git log -p -- "$1"
     ```
@@ -201,7 +227,27 @@ There are many plugins provided by `nnn` which can be used as examples. Here are
     printf "cd to: "
     read -r dir
 
-    printf "%s" "0$dir" > "$NNN_PIPE"
+    printf "%s" "0c$dir" > "$NNN_PIPE"
+    ```
+
+- Send every hovered file to X selection
+    ```sh
+    #!/usr/bin/env sh
+    if [ -z "$NNN_FIFO" ] ; then
+        exit 1
+    fi
+
+    while read FILE ; do
+        if [ -n "$NNN_FIFO" ] ; then
+            # If you want to remove the FIFO,
+            # don't do it before first read,
+            # nnn won't have it opened yet
+            rm "$NNN_FIFO"
+            NNN_FIFO=
+        fi
+        printf "%s" "$FILE" | xsel
+    done < "$NNN_FIFO" &
+    disown
     ```
 
 ## Contributing plugins
