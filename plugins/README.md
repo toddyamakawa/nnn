@@ -8,7 +8,7 @@
 
 ## Introduction
 
-Plugins extend the capabilities of `nnn`. They are _executable_ scripts (or binaries) which `nnn` can communicate with and trigger. This mechanism fits perfectly with the fundamental design to keep the core file manager lean and fast, by delegating repetitive (but not necessarily file manager-specific) tasks to the plugins.
+Plugins extend the capabilities of `nnn`. They are _executable_ scripts (or binaries) `nnn` can communicate with and trigger. This mechanism fits perfectly with the fundamental design to keep the core file manager lean and fast, by delegating repetitive (but not necessarily file manager-specific) tasks to the plugins which can be run with custom hotkeys.
 
 `nnn` is _**language-agnostic**_ when it comes to plugins. You can write a plugin in any (scripting) language you are comfortable in!
 
@@ -60,6 +60,8 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 | pdfread | Read a PDF or text file aloud | sh | pdftotext, mpv,<br>pico2wave |
 | pdfview | View PDF file in `$PAGER` | sh | pdftotext/<br>mupdf-tools |
 | picker | Pick files and list one per line (to pipe) | sh | nnn |
+| preview-tabbed | `tabbed`/xembed based file previewer | bash | _see in-file docs_ |
+| preview-tui | Simple TUI file previewer (needs NNN_FIFO) | sh | tmux/xterm/<br>\$TERMINAL, file, tree |
 | pskill | Fuzzy list by name and kill process or zombie | sh | fzf/fzy, ps,<br>sudo/doas |
 | renamer | Batch rename selection or files in dir | sh | [qmv](https://www.nongnu.org/renameutils/)/[vidir](https://joeyh.name/code/moreutils/) |
 | ringtone | Create a variable bitrate mp3 ringtone from file | sh | date, ffmpeg |
@@ -75,13 +77,13 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 
 ## Invoking a plugin
 
-Use the plugin shortcut (<kbd>;key</kbd> or <kbd>^Skey</kbd>) to list the defined plugin keys and press the required key. E.g., with the below config:
+Press the plugin shortcut (<kbd>;</kbd> or <kbd>^S</kbd>) followed by the assigned key. E.g., with the below config:
 
 ```sh
 export NNN_PLUG='f:finder;o:fzopen;p:mocplay;d:diffs;t:nmount;v:imgview'
 ```
 
-Plugin `fzopen` can be run with the keybind <kbd>;o</kbd>, `mocplay` can be run with <kbd>;p</kbd> and so on... The key vs. plugin pairs are shown in the help and config screen.
+Plugin `finder` can be run with the keybind <kbd>;f</kbd>, `fzopen` can be run with <kbd>;o</kbd> and so on... The key vs. plugin pairs are shown in the help and config screen.
 
 To select and invoke a plugin from the plugin directory, press <kbd>Enter</kbd> (to _enter_ the plugin dir) after the plugin shortcut.
 
@@ -188,7 +190,7 @@ Usage examples can be found in the Examples section below.
 
 #### Get notified on file hover
 
-If `NNN_FIFO` is set, `nnn` will open it and write every hovered files. This can be used in plugins, e.g. to implement file previews.
+If `NNN_FIFO` is set, `nnn` will open it and write every hovered files. This can be used in plugins and external scripts, e.g. to implement file previews.
 
 If a `NNN_FIFO` is set globally, each `nnn` instance will write to it, and a process reading from the pipe will get hovered path from every instance, interleaved.
 

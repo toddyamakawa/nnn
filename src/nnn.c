@@ -565,10 +565,10 @@ static const char * const messages[] = {
 	"invalid regex",
 	"'a'u / 'd'u / 'e'xtn / 'r'ev / 's'ize / 't'ime / 'v'er / 'c'lear?",
 	"unmount failed! try lazy?",
+	"first file (\')/char?",
 	"remove tmp file?",
 	"unchanged",
 	"cancelled",
-	"first file (\')/char?",
 	"0 entries",
 #ifndef DIR_LIMITED_SELECTION
 	"dir changed, range sel off", /* Must be the last entry */
@@ -4236,7 +4236,9 @@ static void rmlistpath()
 		DPRINTF_S(__FUNCTION__);
 		DPRINTF_S(listpath);
 		spawn("rm -rf", listpath, NULL, NULL, F_NOTRACE | F_MULTI);
-		free(listpath);
+		/* Do not free if program was started in list mode */
+		if (listpath != initpath)
+			free(listpath);
 		listpath = NULL;
 	}
 }
@@ -4258,7 +4260,7 @@ static void readpipe(int fd, char **path, char **lastname, char **lastdir)
 		ctx = r + 1;
 	} else {
 		ctx = g_buf[0] - '0';
-		if (ctx > CTX_MAX)
+		if (ctx < 0 || ctx > CTX_MAX)
 			return;
 	}
 
@@ -4677,7 +4679,7 @@ static void populate(char *path, char *lastname)
 static void notify_fifo()
 {
 	if (fifofd == -1) {
-		fifofd = open(fifopath, O_WRONLY|O_NONBLOCK);
+		fifofd = open(fifopath, O_WRONLY|O_NONBLOCK|O_CLOEXEC);
 		if (fifofd == -1) {
 			if (errno != ENXIO)
 				/* Unexpected error, the FIFO file might have been removed */
@@ -5190,6 +5192,7 @@ static bool browse(char *ipath, const char *session)
 #ifndef NOMOUSE
 	MEVENT event;
 	struct timespec mousetimings[2] = {{.tv_sec = 0, .tv_nsec = 0}, {.tv_sec = 0, .tv_nsec = 0} };
+	int mousedent[2] = {-1, -1};
 	bool currentmouse = 1;
 	bool rightclicksel = 0;
 #endif
@@ -5423,13 +5426,16 @@ nochange:
 				    CLOCK_REALTIME,
 #endif
 				    &mousetimings[currentmouse]);
+				mousedent[currentmouse] = cur;
 
-				/*Single click just selects, double click also opens */
-				if (((_ABSSUB(mousetimings[0].tv_sec, mousetimings[1].tv_sec) << 30)
-				  + (mousetimings[0].tv_nsec - mousetimings[1].tv_nsec))
-					> DOUBLECLICK_INTERVAL_NS)
+				/* Single click just selects, double click falls through to SEL_GOIN */
+				if ((mousedent[0] != mousedent[1]) ||
+				  (((_ABSSUB(mousetimings[0].tv_sec, mousetimings[1].tv_sec) << 30)
+				  + (_ABSSUB(mousetimings[0].tv_nsec, mousetimings[1].tv_nsec)))
+					> DOUBLECLICK_INTERVAL_NS))
 					break;
 				mousetimings[currentmouse].tv_sec = 0;
+				mousedent[currentmouse] = -1;
 			} else {
 				if (cfg.filtermode || filterset())
 					presel = FILTER;
