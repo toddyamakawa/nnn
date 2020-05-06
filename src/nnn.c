@@ -431,10 +431,9 @@ static uint g_states;
 #define UTIL_LESS 13
 #define UTIL_SH 14
 #define UTIL_FZF 15
-#define UTIL_FZY 16
-#define UTIL_NTFY 17
-#define UTIL_CBCP 18
-#define UTIL_NMV 19
+#define UTIL_NTFY 16
+#define UTIL_CBCP 17
+#define UTIL_NMV 18
 
 /* Utilities to open files, run actions */
 static char * const utils[] = {
@@ -470,7 +469,6 @@ static char * const utils[] = {
 	"less",
 	"sh",
 	"fzf",
-	"fzy",
 	".ntfy",
 	".cbcp",
 	".nmv",
@@ -2899,7 +2897,7 @@ static size_t mkpath(const char *dir, const char *name, char *out)
 	size_t len;
 
 	/* Handle absolute path */
-	if (name[0] == '/')
+	if (name[0] == '/') // NOLINT
 		return xstrsncpy(out, name, PATH_MAX);
 
 	/* Handle root case */
@@ -4275,6 +4273,8 @@ static void readpipe(int fd, char **path, char **lastname, char **lastdir)
 		if (len <= 0)
 			return;
 
+		/* Terminate the path read */
+		g_buf[len] = '\0';
 		nextpath = g_buf;
 	} else if (op == 'l') {
 		/* Remove last list mode path, if any */
@@ -4287,6 +4287,7 @@ static void readpipe(int fd, char **path, char **lastname, char **lastdir)
 		if (ctx == 0 || ctx == cfg.curctx + 1) {
 			xstrsncpy(*lastdir, *path, PATH_MAX);
 			xstrsncpy(*path, nextpath, PATH_MAX);
+			DPRINTF_S(*path);
 		} else {
 			r = ctx - 1;
 
@@ -4351,7 +4352,7 @@ static void launch_app(const char *path, char *newpath)
 
 	mkpath(plugindir, utils[UTIL_LAUNCH], newpath);
 
-	if (!(getutil(utils[UTIL_FZF]) || getutil(utils[UTIL_FZY])) || access(newpath, X_OK) < 0) {
+	if (!getutil(utils[UTIL_FZF]) || access(newpath, X_OK) < 0) {
 		tmp = xreadline(NULL, messages[MSG_APP_NAME]);
 		r = F_NOWAIT | F_NOTRACE | F_MULTI;
 	}
@@ -4690,11 +4691,13 @@ static void notify_fifo()
 	}
 
 	static char *name = NULL;
+	static time_t t = {0};
 
-	if (dents[cur].name == name)
+	if (dents[cur].name == name && dents[cur].t == t)
 		return;
 
 	name = dents[cur].name;
+	t = dents[cur].t;
 
 	char path[PATH_MAX];
 	size_t len = mkpath(g_ctx[cfg.curctx].c_path, ndents ? name : "", path);
@@ -7038,6 +7041,9 @@ int main(int argc, char *argv[])
 				spawn(opener, arg, NULL, NULL, cfg.cliopener ? F_CLI : F_NOTRACE | F_NOWAIT);
 				return _SUCCESS;
 			}
+
+			if (session)
+				session = NULL;
 		}
 	}
 

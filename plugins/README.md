@@ -24,19 +24,20 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 
 ## List of plugins
 
-| Plugin (a-z) | Description | Lang | Deps |
+| Plugin (a-z) | Description | Lang | Dependencies |
 | --- | --- | --- | --- |
 | autojump | Navigate to dir/path | sh | autojump |
+| bookmarks | Use named bookmarks managed with symlinks | sh | fzf |
 | boom | Play random music from dir | sh | [moc](http://moc.daper.net/) |
 | dups | List non-empty duplicate files in current dir | sh | find, md5sum,<br>sort uniq xargs |
 | chksum | Create and verify checksums | sh | md5sum,<br>sha256sum |
 | diffs | Diff for selection (limited to 2 for directories) | sh | vimdiff |
 | dragdrop | Drag/drop files from/into nnn | sh | [dragon](https://github.com/mwh/dragon) |
 | finder | Run custom find command and list | sh | - |
-| fzcd | Change to the directory of a fuzzy-selected file/dir | sh | fzf/fzy<br>fd/fdfind/find |
-| fzhist | Fuzzy-select a cmd from history, edit in `$EDITOR` and run | sh | fzf/fzy |
-| fzopen | Fuzzy find a file in dir subtree and edit or open | sh | fzf/fzy, xdg-open |
-| fzz | Change to any directory in the z database with fzf/fzy | sh | fzf/fzy, z |
+| fzcd | Change to the directory of a fuzzy-selected file/dir | sh | fzf |
+| fzhist | Fuzzy-select a cmd from history, edit in `$EDITOR` and run | sh | fzf |
+| fzopen | Fuzzy find a file in dir subtree and edit or open | sh | fzf, xdg-open |
+| fzz | Change to any directory in the z database with fzf | sh | fzf, z |
 | getplugs | Update plugins to installed `nnn` version | sh | curl |
 | gutenread | Browse, download, read from Project Gutenberg | sh | curl, unzip, w3m<br>[epr](https://github.com/wustho/epr) (optional) |
 | hexview | View a file in hex in `$PAGER` | sh | xxd |
@@ -46,7 +47,7 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 | imgview | Browse images, set wallpaper, copy path ([config](https://wiki.archlinux.org/index.php/Sxiv#Assigning_keyboard_shortcuts)), [rename](https://github.com/jarun/nnn/wiki/Basic-use-cases#browse-rename-images)| sh | sxiv/[viu](https://github.com/atanunq/viu), less|
 | ipinfo | Fetch external IP address and whois information | sh | curl, whois |
 | kdeconnect | Send selected files to an Android device | sh | kdeconnect-cli |
-| launch | GUI application launcher | sh | fzf/fzy |
+| launch | GUI application launcher | sh | fzf |
 | mediainf | Show media information | sh | mediainfo |
 | mimelist | List files by mime in subtree | sh | fd/find |
 | moclyrics | Show lyrics of the track playing in moc | sh | [ddgr](https://github.com/jarun/ddgr), [moc](http://moc.daper.net/) |
@@ -61,8 +62,8 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 | pdfview | View PDF file in `$PAGER` | sh | pdftotext/<br>mupdf-tools |
 | picker | Pick files and list one per line (to pipe) | sh | nnn |
 | preview-tabbed | `tabbed`/xembed based file previewer | bash | _see in-file docs_ |
-| preview-tui | Simple TUI file previewer (needs NNN_FIFO) | sh | tmux/xterm/<br>\$TERMINAL, file, tree |
-| pskill | Fuzzy list by name and kill process or zombie | sh | fzf/fzy, ps,<br>sudo/doas |
+| preview-tui | Simple TUI file previewer (needs NNN_FIFO) | sh | tmux (>= 3.0)/xterm/<br>\$TERMINAL, file, tree |
+| pskill | Fuzzy list by name and kill process or zombie | sh | fzf, ps, sudo/doas |
 | renamer | Batch rename selection or files in dir | sh | [qmv](https://www.nongnu.org/renameutils/)/[vidir](https://joeyh.name/code/moreutils/) |
 | ringtone | Create a variable bitrate mp3 ringtone from file | sh | date, ffmpeg |
 | splitjoin | Split file or join selection | sh | split, cat |
@@ -258,3 +259,4 @@ There are many plugins provided by `nnn` which can be used as examples. Here are
 2. Add an entry in the table above.
 3. Keep non-portable commands (like `notify-send`) commented so users from any other OS/DE aren't surprised.
 4. The plugin file should be executable.
+5. If your plugin stores data, use `${XDG_CACHE_HOME:-$HOME/.cache}/nnn`. Document it _in-file_.
