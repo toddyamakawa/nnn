@@ -17,6 +17,7 @@
 .Op Ar -g
 .Op Ar -H
 .Op Ar -K
+.Op Ar -l
 .Op Ar -n
 .Op Ar -p file
 .Op Ar -Q
@@ -85,6 +86,9 @@ supports the following options:
 .Pp
 .Fl K
         test for keybind collision
+.Pp
+.Fl "l val"
+        number of lines to move per mouse wheel scroll
 .Pp
 .Fl n
         start in type-to-nav mode
@@ -334,8 +338,9 @@ separated by \fI;\fR:
     export NNN_PLUG='f:finder;o:fzopen;p:mocplay;d:diffs;t:nmount;v:imgview'
 
     NOTES:
-    1. To run a plugin directly, press \fI;\fR followed by the plugin key.
-    2. To skip directory refresh after running a plugin, prefix with \fB-\fR.
+    1. To run a plugin directly, press \fI;\fR followed by the key.
+    2. Alternatively, combine with \fIAlt\fR (i.e. \fIAlt+key\fR).
+    3. To skip directory refresh after running a plugin, prefix with \fB-\fR.
 
     export NNN_PLUG='m:-mediainf'
 .Ed
@@ -353,6 +358,7 @@ separated by \fI;\fR:
     4. To disable directory refresh after running a \fIcommand as plugin\fR,
        prefix with \fB-_\fR
     5. To skip user confirmation after command execution, suffix with \fB*\fR
+       Note: Do not use \fB*\fR with programs those run and exit e.g. cat
 
     export NNN_PLUG='y:-_sync*'
 

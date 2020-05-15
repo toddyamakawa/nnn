@@ -78,13 +78,15 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 
 ## Invoking a plugin
 
-Press the plugin shortcut (<kbd>;</kbd> or <kbd>^S</kbd>) followed by the assigned key. E.g., with the below config:
+Press the plugin shortcut (<kbd>;</kbd> or <kbd>^S</kbd>) followed by the assigned key character. E.g., with the below config:
 
 ```sh
 export NNN_PLUG='f:finder;o:fzopen;p:mocplay;d:diffs;t:nmount;v:imgview'
 ```
 
 Plugin `finder` can be run with the keybind <kbd>;f</kbd>, `fzopen` can be run with <kbd>;o</kbd> and so on... The key vs. plugin pairs are shown in the help and config screen.
+
+Alternatively, combine with <kbd>Alt</kbd> (i.e. <kbd>Alt+key</kbd>).
 
 To select and invoke a plugin from the plugin directory, press <kbd>Enter</kbd> (to _enter_ the plugin dir) after the plugin shortcut.
 
@@ -119,6 +121,8 @@ export NNN_PLUG='s:_smplayer $nnn*;n:-_vim /home/vaio/Dropbox/Public/synced_note
 ```
 
 Now there will be no prompt after <kbd>;s</kbd> and <kbd>;n</kbd>.
+
+Note: Do not use `*` with programs those run and exit e.g. cat.
 
 #### Run GUI app as plugin
 

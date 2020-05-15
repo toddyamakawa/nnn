@@ -7,7 +7,6 @@
 <a href="https://circleci.com/gh/jarun/workflows/nnn"><img src="https://img.shields.io/circleci/project/github/jarun/nnn.svg?label=circleci" alt="CircleCI Status" /></a>
 <a href="https://en.wikipedia.org/wiki/Privacy-invasive_software"><img src="https://img.shields.io/badge/privacy-✓-crimson?maxAge=2592000" alt="Privacy Awareness" /></a>
 <a href="https://github.com/jarun/nnn/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-BSD%202--Clause-yellow.svg?maxAge=2592000" alt="License" /></a>
-<a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=RMLTQ76JSXJ4Q"><img src="https://img.shields.io/badge/donate-PayPal-1eb0fc.svg" alt="Donate via PayPal!" /></a>
 </p>
 
 <p align="center"><a href="https://www.youtube.com/watch?v=U2n5aGqou9E"><img src="https://i.imgur.com/MPWpmos.png" /></a></p>
@@ -23,16 +22,21 @@
 
 It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw) (Android), Linux, macOS, BSD, Haiku, Cygwin, WSL, across DEs and GUI utilities or a strictly CLI environment.
 
+<p align="center">
+<a href="https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=RMLTQ76JSXJ4Q"><img src="https://img.shields.io/badge/donate-PayPal-1eb0fc.svg" alt="Donate via PayPal!" /></a>
+</p>
+
 ## Black magic! :dark_sunglasses:
 
 - Load, sort, filter thousands of files instantly
 - Type to navigate with automatic dir selection
 - Select files from anywhere (not just a single dir)
+- Never lose context - start where you quit `nnn`
 - Edit and preview markdown, man page, html
 - Open a file and auto-advance to the next
 - Export (filtered) list of visible files
-- find/fd/fzf/grep/ripgrep/fzf from `nnn` and list in `nnn`
-- Unlimited bookmarks, plugins, commands with custom hotkeys
+- find/fd/grep/ripgrep/fzf from `nnn` and list in `nnn`
+- Unlimited bookmarks, plugins, cmds with custom hotkeys
 - Write a plugin in any language you know
 - Configure the middle mouse click to do anything
 - Fuzzy search subtree and open a file (or its parent dir)
