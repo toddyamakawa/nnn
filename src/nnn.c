@@ -691,7 +691,6 @@ static int dentfind(const char *fname, int n);
 static void move_cursor(int target, int ignore_scrolloff);
 static inline bool getutil(char *util);
 static size_t mkpath(const char *dir, const char *name, char *out);
-static char *xgetenv(const char *name, char *fallback);
 static bool plugscript(const char *plugin, uchar flags);
 static char *load_input(int fd, const char *path);
 
@@ -3549,6 +3548,17 @@ END:
 	return status;
 }
 
+static uchar get_free_ctx(void)
+{
+	uchar r = cfg.curctx;
+
+	do
+		r = (r + 1) & ~CTX_MAX;
+	while (g_ctx[r].c_cfg.ctxactive && (r != cfg.curctx));
+
+	return r;
+}
+
 /*
  * Gets only a single line (that's what we need
  * for now) or shows full command output in pager.
@@ -4251,13 +4261,9 @@ static void readpipe(int fd, char **path, char **lastname, char **lastdir)
 	if (len != 1)
 		return;
 
-	if (g_buf[0] == '+') {
-		r = cfg.curctx;
-		do
-			r = (r + 1) & ~CTX_MAX;
-		while (g_ctx[r].c_cfg.ctxactive && (r != cfg.curctx));
-		ctx = r + 1;
-	} else {
+	if (g_buf[0] == '+')
+		ctx = (char)(get_free_ctx() + 1);
+	else {
 		ctx = g_buf[0] - '0';
 		if (ctx < 0 || ctx > CTX_MAX)
 			return;
@@ -5221,7 +5227,7 @@ static bool cdprep(char *lastdir, char *lastname, char *path, char *newpath)
 	return cfg.filtermode;
 }
 
-static bool browse(char *ipath, const char *session)
+static bool browse(char *ipath, const char *session, int pkey)
 {
 	char newpath[PATH_MAX] __attribute__ ((aligned));
 	char rundir[PATH_MAX] __attribute__ ((aligned));
@@ -5263,7 +5269,7 @@ static bool browse(char *ipath, const char *session)
 
 	newpath[0] = rundir[0] = runfile[0] = '\0';
 
-	presel = cfg.filtermode ? FILTER : 0;
+	presel = pkey ? ';' : (cfg.filtermode ? FILTER : 0);
 
 	dents = xrealloc(dents, total_dents * sizeof(struct entry));
 	if (!dents)
@@ -5526,9 +5532,29 @@ nochange:
 					return EXIT_SUCCESS;
 				}
 
-				/* If open file is disabled on right arrow or `l`, return */
-				if (cfg.nonavopen && sel == SEL_NAV_IN)
-					goto nochange;
+				if (sel == SEL_NAV_IN) {
+					/* If in listing dir, go to target on `l` or Right on symlink */
+					if (listpath && S_ISLNK(dents[cur].mode)
+					    && is_prefix(path, listpath, strlen(listpath))) {
+						if (!realpath(dents[cur].name, newpath)) {
+							printwarn(&presel);
+							goto nochange;
+						}
+
+						xdirname(newpath);
+
+						if (chdir(newpath) == -1) {
+							printwarn(&presel);
+							goto nochange;
+						}
+
+						cdprep(lastdir, NULL, path, newpath)
+						       ? (presel = FILTER) : (watch = TRUE);
+						xstrsncpy(lastname, dents[cur].name, NAME_MAX + 1);
+						goto begin;
+					} else if (cfg.nonavopen)
+						goto nochange; /* Open file disabled on right arrow or `l` */
+				}
 
 				/* Handle plugin selection mode */
 				if (cfg.runplugin) {
@@ -5689,7 +5715,9 @@ nochange:
 				goto nochange;
 			}
 
-			cdprep(lastdir, lastname, path, newpath) ? (presel = FILTER) : (watch = TRUE);
+			/* In list mode, retain the last file name to highlight it, if possible */
+			cdprep(lastdir, listpath && sel == SEL_CDLAST ? NULL : lastname, path, newpath)
+			       ? (presel = FILTER) : (watch = TRUE);
 			goto begin;
 		case SEL_CYCLE: // fallthrough
 		case SEL_CYCLER: // fallthrough
@@ -6245,10 +6273,16 @@ nochange:
 				goto nochange;
 			}
 
-			r = xstrsncpy(g_buf, messages[MSG_PLUGIN_KEYS], CMD_LEN_MAX);
-			printkeys(plug, g_buf + r - 1, maxplug);
-			printmsg(g_buf);
-			r = get_input(NULL);
+			if (!pkey) {
+				r = xstrsncpy(g_buf, messages[MSG_PLUGIN_KEYS], CMD_LEN_MAX);
+				printkeys(plug, g_buf + r - 1, maxplug);
+				printmsg(g_buf);
+				r = get_input(NULL);
+			} else {
+				r = pkey;
+				pkey = '\0';
+			}
+
 			if (r != '\r') {
 				endselection();
 				tmp = get_kv_val(plug, NULL, r, maxplug, NNN_PLUG);
@@ -6715,6 +6749,7 @@ static void usage(void)
 		" -n      type-to-nav mode\n"
 		" -o      open files only on Enter\n"
 		" -p file selection file [stdout if '-']\n"
+		" -P key  run plugin key\n"
 		" -Q      no quit confirmation\n"
 		" -r      use advcpmv patched cp, mv\n"
 		" -R      no rollover at edges\n"
@@ -6860,7 +6895,7 @@ int main(int argc, char *argv[])
 {
 	char *arg = NULL;
 	char *session = NULL;
-	int fd, opt, sort = 0;
+	int fd, opt, sort = 0, pkey = '\0'; /* Plugin key */
 #ifndef NOMOUSE
 	mmask_t mask;
 	char *middle_click_env = xgetenv(env_cfg[NNN_MCLICK], "\0");
@@ -6877,13 +6912,14 @@ int main(int argc, char *argv[])
 
 	while ((opt = (env_opts_id > 0
 		       ? env_opts[--env_opts_id]
-		       : getopt(argc, argv, "Ab:cdeEfFgHKl:nop:QrRs:St:T:Vxh"))) != -1) {
+		       : getopt(argc, argv, "Ab:cdeEfFgHKl:nop:P:QrRs:St:T:Vxh"))) != -1) {
 		switch (opt) {
 		case 'A':
 			cfg.autoselect = 0;
 			break;
 		case 'b':
-			arg = optarg;
+			if (env_opts_id < 0)
+				arg = optarg;
 			break;
 		case 'c':
 			cfg.cliopener = 1;
@@ -6944,6 +6980,10 @@ int main(int argc, char *argv[])
 				selpath = realpath(optarg, NULL);
 				unlink(selpath);
 			}
+			break;
+		case 'P':
+			if (env_opts_id < 0 && !optarg[1])
+				pkey = optarg[0];
 			break;
 		case 'Q':
 			g_states |= STATE_FORCEQUIT;
@@ -7120,7 +7160,7 @@ int main(int argc, char *argv[])
 
 #ifndef NOFIFO
 	/* Create fifo */
-	fifopath = getenv("NNN_FIFO");
+	fifopath = xgetenv("NNN_FIFO", NULL);
 	if (fifopath) {
 		if (mkfifo(fifopath, 0600) != 0 && !(errno == EEXIST && access(fifopath, W_OK) == 0)) {
 			xerror();
@@ -7201,7 +7241,7 @@ int main(int argc, char *argv[])
 	if (sort)
 		set_sort_flags(sort);
 
-	opt = browse(initpath, session);
+	opt = browse(initpath, session, pkey);
 
 #ifndef NOMOUSE
 	mousemask(mask, NULL);
