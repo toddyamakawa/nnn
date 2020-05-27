@@ -107,7 +107,7 @@
 #include "dbg.h"
 
 /* Macro definitions */
-#define VERSION "3.1"
+#define VERSION "3.2"
 #define GENERAL_INFO "BSD 2-Clause\nhttps://github.com/jarun/nnn"
 #define SESSIONS_VERSION 1
 
@@ -349,6 +349,7 @@ static char *prefixpath;
 static char *plugindir;
 static char *sessiondir;
 static char *pnamebuf, *pselbuf;
+static char *mark;
 #ifndef NOFIFO
 static char *fifopath;
 #endif
@@ -400,6 +401,8 @@ static char g_pipepath[TMP_LEN_MAX] __attribute__ ((aligned));
 #define STATE_FORTUNE 0x20
 #define STATE_TRASH 0x40
 #define STATE_FORCEQUIT 0x80
+#define STATE_AUTOFIFO 0x100
+#define STATE_INITFILE 0x200
 
 static uint g_states;
 
@@ -2637,7 +2640,7 @@ static int filterentries(char *path, char *lastname)
 				ln[0] = (ln[0] == FILTER) ? RFILTER : FILTER;
 				wln[0] = (uchar)ln[0];
 				cfg.regex ^= 1;
-				filterfn = (filterfn == &visible_str) ? &visible_re : &visible_str;
+				filterfn = cfg.regex ? &visible_re : &visible_str;
 				showfilter(ln);
 				continue;
 			}
@@ -4428,6 +4431,7 @@ static void dentfree(void)
 {
 	free(pnamebuf);
 	free(dents);
+	free(mark);
 }
 
 static blkcnt_t dirwalk(char *path, struct stat *psb)
@@ -5226,7 +5230,7 @@ static bool browse(char *ipath, const char *session, int pkey)
 	char newpath[PATH_MAX] __attribute__ ((aligned));
 	char rundir[PATH_MAX] __attribute__ ((aligned));
 	char runfile[NAME_MAX + 1] __attribute__ ((aligned));
-	char *path, *lastdir, *lastname, *dir, *tmp, *mark = NULL;
+	char *path, *lastdir, *lastname, *dir, *tmp;
 	enum action sel;
 	struct stat sb;
 	int r = -1, presel, selstartid = 0, selendid = 0;
@@ -5252,11 +5256,20 @@ static bool browse(char *ipath, const char *session, int pkey)
 
 	/* setup first context */
 	if (!session || !load_session(session, &path, &lastdir, &lastname, FALSE)) {
-		xstrsncpy(g_ctx[0].c_path, ipath, PATH_MAX); /* current directory */
-		path = g_ctx[0].c_path;
-		g_ctx[0].c_last[0] = g_ctx[0].c_name[0] = '\0';
+		g_ctx[0].c_last[0] = '\0';
 		lastdir = g_ctx[0].c_last; /* last visited directory */
+
+		if (g_states & STATE_INITFILE) {
+			xstrsncpy(g_ctx[0].c_name, xbasename(ipath), sizeof(g_ctx[0].c_name));
+			xdirname(ipath);
+		} else
+			g_ctx[0].c_name[0] = '\0';
+
 		lastname = g_ctx[0].c_name; /* last visited filename */
+
+		xstrsncpy(g_ctx[0].c_path, ipath, PATH_MAX);
+		path = g_ctx[0].c_path; /* current directory */
+
 		g_ctx[0].c_fltr[0] = g_ctx[0].c_fltr[1] = '\0';
 		g_ctx[0].c_cfg = cfg; /* current configuration */
 	}
@@ -5341,20 +5354,16 @@ begin:
 
 nochange:
 		/* Exit if parent has exited */
-		if (getppid() == 1) {
-			free(mark);
+		if (getppid() == 1)
 			_exit(EXIT_FAILURE);
-		}
 
 		/* If CWD is deleted or moved or perms changed, find an accessible parent */
 		if (chdir(path) == -1)
 			goto begin;
 
 		/* If STDIN is no longer a tty (closed) we should exit */
-		if (!isatty(STDIN_FILENO) && !cfg.picker) {
-			free(mark);
+		if (!isatty(STDIN_FILENO) && !cfg.picker)
 			return EXIT_FAILURE;
-		}
 
 		sel = nextsel(presel);
 		if (presel)
@@ -5522,7 +5531,6 @@ nochange:
 				if (cfg.picker && sel == SEL_GOIN) {
 					appendfpath(newpath, mkpath(path, dents[cur].name, newpath));
 					writesel(pselbuf, selbufpos - 1);
-					free(mark);
 					return EXIT_SUCCESS;
 				}
 
@@ -6462,7 +6470,6 @@ nochange:
 			/* Picker mode: reset buffer or clear file */
 			if (sel == SEL_QUITCD || getenv("NNN_TMPFILE"))
 				cfg.picker ? selbufpos = 0 : write_lastdir(path);
-			free(mark);
 			return sel == SEL_QUITFAIL ? EXIT_FAILURE : EXIT_SUCCESS;
 		default:
 			r = FALSE;
@@ -6724,8 +6731,11 @@ static void usage(void)
 		"%s: nnn [OPTIONS] [PATH]\n\n"
 		"The missing terminal file manager for X.\n\n"
 		"positional args:\n"
-		"  PATH   start dir [default: .]\n\n"
+		"  PATH   start dir/file [default: .]\n\n"
 		"optional args:\n"
+#ifndef NOFIFO
+		" -a      auto NNN_FIFO\n"
+#endif
 		" -A      no dir auto-select\n"
 		" -b key  open bookmark key (trumps -s/S)\n"
 		" -c      cli-only NNN_OPENER (trumps -e)\n"
@@ -6880,6 +6890,11 @@ static void cleanup(void)
 	free(ihashbmp);
 	free(bookmark);
 	free(plug);
+#ifndef NOFIFO
+	if (g_states & STATE_AUTOFIFO)
+		unlink(fifopath);
+#endif
+
 #ifdef DBGMODE
 	disabledbg();
 #endif
@@ -6906,8 +6921,13 @@ int main(int argc, char *argv[])
 
 	while ((opt = (env_opts_id > 0
 		       ? env_opts[--env_opts_id]
-		       : getopt(argc, argv, "Ab:cdeEfFgHKl:nop:P:QrRs:St:T:Vxh"))) != -1) {
+		       : getopt(argc, argv, "aAb:cdeEfFgHKl:nop:P:QrRs:St:T:Vxh"))) != -1) {
 		switch (opt) {
+#ifndef NOFIFO
+		case 'a':
+			g_states |= STATE_AUTOFIFO;
+			break;
+#endif
 		case 'A':
 			cfg.autoselect = 0;
 			break;
@@ -7110,10 +7130,8 @@ int main(int argc, char *argv[])
 				return EXIT_FAILURE;
 			}
 
-			if (S_ISREG(sb.st_mode)) {
-				spawn(opener, arg, NULL, cfg.cliopener ? F_CLI : F_NOTRACE | F_NOWAIT);
-				return EXIT_SUCCESS;
-			}
+			if (!S_ISDIR(sb.st_mode))
+				g_states |= STATE_INITFILE;
 
 			if (session)
 				session = NULL;
@@ -7154,6 +7172,12 @@ int main(int argc, char *argv[])
 
 #ifndef NOFIFO
 	/* Create fifo */
+	if (g_states & STATE_AUTOFIFO) {
+		g_tmpfpath[tmpfplen - 1] = '\0';
+		snprintf(g_buf, CMD_LEN_MAX, "%s/nnn-fifo.%d", g_tmpfpath, getpid());
+		setenv("NNN_FIFO", g_buf, TRUE);
+	}
+
 	fifopath = xgetenv("NNN_FIFO", NULL);
 	if (fifopath) {
 		if (mkfifo(fifopath, 0600) != 0 && !(errno == EEXIST && access(fifopath, W_OK) == 0)) {
