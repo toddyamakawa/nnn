@@ -79,7 +79,7 @@ Plugins are installed to `${XDG_CONFIG_HOME:-$HOME/.config}/nnn/plugins`.
 
 ## Invoking a plugin
 
-Press the plugin shortcut (<kbd>;</kbd> or <kbd>^S</kbd>) followed by the assigned key character. E.g., with the below config:
+Press the plugin shortcut (<kbd>;</kbd>) followed by the assigned key character. E.g., with the below config:
 
 ```sh
 export NNN_PLUG='f:finder;o:fzopen;p:mocplay;d:diffs;t:nmount;v:imgview'
@@ -93,13 +93,13 @@ To select and invoke a plugin from the plugin directory, press <kbd>Enter</kbd> 
 
 #### Skip directory refresh after running a plugin
 
-`nnn` refreshes the directory after running a plugin to reflect any changes by the plugin. To disable this (say while running the `mediainfo` plugin on some filtered files), add a `-` before the plugin name:
+`nnn` refreshes the directory after running a plugin to reflect any changes by the plugin. To disable this (say while running the `mediainf` plugin on some filtered files), add a `-` before the plugin name:
 
 ```sh
 export NNN_PLUG='m:-mediainf'
 ```
 
-Now `nnn` will not refresh the directory after running the `mediainfo` plugin.
+Now `nnn` will not refresh the directory after running the `mediainf` plugin.
 
 ## Running commands as plugin
 
@@ -198,11 +198,9 @@ Usage examples can be found in the Examples section below.
 
 If `NNN_FIFO` is set, `nnn` will open it and write every hovered files. This can be used in plugins and external scripts, e.g. to implement file previews.
 
-The easiest way to set `NNN_FIFO` is to start `nnn` with the `-a` option, to automatically setup a temporary FIFO file for this `nnn` instance.
-
-If a `NNN_FIFO` environment variable is set globally (and `-a` is not passed to `nnn`), each `nnn` instance will write to the same FIFO, and a process reading from the pipe will get hovered path from every instance, interleaved.
-
 Don't forget to fork in the background to avoid blocking `nnn`.
+
+For more details on configuration and usage of the preview plugins, visit [Live Previews](https://github.com/jarun/nnn/wiki/Live-previews).
 
 #### Examples
 There are many plugins provided by `nnn` which can be used as examples. Here are a few simple selected examples.

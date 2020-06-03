@@ -60,6 +60,12 @@ enum action {
 	SEL_CTX2,
 	SEL_CTX3,
 	SEL_CTX4,
+#ifdef CTX8
+	SEL_CTX5,
+	SEL_CTX6,
+	SEL_CTX7,
+	SEL_CTX8,
+#endif
 	SEL_PIN,
 	SEL_FLTR,
 	SEL_MFLTR,
@@ -98,6 +104,9 @@ enum action {
 	SEL_QUITCD,
 	SEL_QUIT,
 	SEL_QUITFAIL,
+#ifndef NOFIFO
+	SEL_FIFO,
+#endif
 #ifndef NOMOUSE
 	SEL_CLICK,
 #endif
@@ -157,16 +166,20 @@ static struct key bindings[] = {
 	/* Connect to server over SSHFS */
 	{ 'c',            SEL_REMOTE },
 	/* Cycle contexts in forward direction */
-	{ '\t',           SEL_CYCLE },
 	{ '>',            SEL_CYCLE },
 	/* Cycle contexts in reverse direction */
-	{ KEY_BTAB,       SEL_CYCLER },
 	{ '<',            SEL_CYCLER },
 	/* Go to/create context N */
 	{ '1',            SEL_CTX1 },
 	{ '2',            SEL_CTX2 },
 	{ '3',            SEL_CTX3 },
 	{ '4',            SEL_CTX4 },
+#ifdef CTX8
+	{ '5',            SEL_CTX5 },
+	{ '6',            SEL_CTX6 },
+	{ '7',            SEL_CTX7 },
+	{ '8',            SEL_CTX8 },
+#endif
 	/* Mark a path to visit later */
 	{ ',',            SEL_PIN },
 	/* Filter */
@@ -175,7 +188,6 @@ static struct key bindings[] = {
 	{ CONTROL('N'),   SEL_MFLTR },
 	/* Toggle hide .dot files */
 	{ '.',            SEL_HIDDEN },
-	{ KEY_F(5),       SEL_HIDDEN },
 	/* Detailed listing */
 	{ 'd',            SEL_DETAIL },
 	/* File details */
@@ -190,7 +202,7 @@ static struct key bindings[] = {
 	/* Redraw window */
 	{ CONTROL('L'),   SEL_REDRAW },
 	/* Select current file path */
-	{ ' ',            SEL_SEL },
+	{ '\t',           SEL_SEL },
 	/* Toggle select multiple files */
 	{ 'm',            SEL_SELMUL },
 	/* Select all files in current dir */
@@ -227,8 +239,7 @@ static struct key bindings[] = {
 	/* Edit in EDITOR */
 	{ 'e',            SEL_EDIT },
 	/* Run a plugin */
-	{ ';',            SEL_PLUGIN },
-	{ CONTROL('S'),   SEL_PLUGIN },
+	{ ' ',            SEL_PLUGIN },
 	/* Run command */
 	{ '!',            SEL_SHELL },
 	{ CONTROL(']'),   SEL_SHELL },
@@ -252,6 +263,10 @@ static struct key bindings[] = {
 	{ CONTROL('Q'),   SEL_QUIT },
 	/* Quit with an error code */
 	{ 'Q',            SEL_QUITFAIL },
+#ifndef NOFIFO
+	/* Send hovered path to NNN_FIFO */
+	{ 27,            SEL_FIFO },
+#endif
 #ifndef NOMOUSE
 	{ KEY_MOUSE,      SEL_CLICK },
 #endif

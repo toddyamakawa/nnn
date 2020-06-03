@@ -152,13 +152,19 @@
 #define _ALIGNMENT 0x10 /* 16-byte alignment */
 #define _ALIGNMENT_MASK 0xF
 #define TMP_LEN_MAX 64
-#define CTX_MAX 4
 #define DOT_FILTER_LEN 7
 #define ASCII_MAX 128
 #define EXEC_ARGS_MAX 8
 #define LIST_FILES_MAX (1 << 16)
 #define SCROLLOFF 3
-#define MIN_DISPLAY_COLS 10
+
+#ifndef CTX8
+#define CTX_MAX 4
+#else
+#define CTX_MAX 8
+#endif
+
+#define MIN_DISPLAY_COLS ((CTX_MAX * 2) + 2) /* Two chars for [ and ] */
 #define LONG_SIZE sizeof(ulong)
 #define ARCHIVE_CMD_LEN 16
 #define BLK_SHIFT_512 9
@@ -179,6 +185,7 @@
 #define F_NOTRACE 0x04  /* suppress stdout and strerr (no traces) */
 #define F_NORMAL  0x08  /* spawn child process in non-curses regular CLI mode */
 #define F_CONFIRM 0x10  /* run command - show results before exit (must have F_NORMAL) */
+#define F_CHKRTN  0x20  /* wait for user prompt if cmd returns failure status */
 #define F_CLI     (F_NORMAL | F_MULTI)
 #define F_SILENT  (F_CLI | F_NOTRACE)
 
@@ -253,8 +260,7 @@ typedef struct {
 	uint ctxactive  : 1;  /* Context active or not */
 	uint reserved1  : 3;
 	/* The following settings are global */
-	uint curctx     : 2;  /* Current context number */
-	uint dircolor   : 1;  /* Current status of dir color */
+	uint curctx     : 3;  /* Current context number */
 	uint picker     : 1;  /* Write selection to user-specified file */
 	uint pickraw    : 1;  /* Write selection to sdtout before exit */
 	uint nonavopen  : 1;  /* Open file on right arrow or `l` */
@@ -270,6 +276,22 @@ typedef struct {
 	uint waitedit   : 1;  /* For ops that can't be detached, used EDITOR */
 	uint rollover   : 1;  /* Roll over at edges */
 } settings;
+
+/* Non-persistent program-internal states */
+typedef struct {
+	uint pluginit   : 1;  /* Plugin framework initialized */
+	uint interrupt  : 1;  /* Program received an interrupt */
+	uint rangesel   : 1;  /* Range selection on */
+	uint move       : 1;  /* Move operation */
+	uint autonext   : 1;  /* Auto-proceed on open */
+	uint fortune    : 1;  /* Show fortune messages in help */
+	uint trash      : 1;  /* Use trash to delete files */
+	uint forcequit  : 1;  /* Do not prompt on quit */
+	uint autofifo   : 1;  /* Auto-create NNN_FIFO */
+	uint initfile   : 1;  /* Positional arg is a file */
+	uint dircolor   : 1;  /* Current status of dir color */
+	uint reserved   : 21;
+} runstate;
 
 /* Contexts or workspaces */
 typedef struct {
@@ -305,7 +327,6 @@ static settings cfg = {
 	1, /* ctxactive */
 	0, /* reserved1 */
 	0, /* curctx */
-	0, /* dircolor */
 	0, /* picker */
 	0, /* pickraw */
 	0, /* nonavopen */
@@ -372,14 +393,8 @@ static regex_t archive_re;
 #endif
 
 /* Retain old signal handlers */
-#ifdef __linux__
-static sighandler_t oldsighup; /* old value of hangup signal */
-static sighandler_t oldsigtstp; /* old value of SIGTSTP */
-#else
-/* note: no sig_t on Solaris-derivs */
-static void (*oldsighup)(int);
-static void (*oldsigtstp)(int);
-#endif
+static struct sigaction oldsighup;
+static struct sigaction oldsigtstp;
 
 /* For use in functions which are isolated and don't return the buffer */
 static char g_buf[CMD_LEN_MAX] __attribute__ ((aligned));
@@ -390,21 +405,8 @@ static char g_tmpfpath[TMP_LEN_MAX] __attribute__ ((aligned));
 /* Buffer to store plugins control pipe location */
 static char g_pipepath[TMP_LEN_MAX] __attribute__ ((aligned));
 
-/* MISC NON-PERSISTENT INTERNAL BINARY STATES */
-
-/* Plugin control initialization status */
-#define STATE_PLUGIN_INIT 0x1
-#define STATE_INTERRUPTED 0x2
-#define STATE_RANGESEL 0x4
-#define STATE_MOVE_OP 0x8
-#define STATE_AUTONEXT 0x10
-#define STATE_FORTUNE 0x20
-#define STATE_TRASH 0x40
-#define STATE_FORCEQUIT 0x80
-#define STATE_AUTOFIFO 0x100
-#define STATE_INITFILE 0x200
-
-static uint g_states;
+/* Non-persistent runtime states */
+static runstate g_state;
 
 /* Options to identify file mime */
 #if defined(__APPLE__)
@@ -701,7 +703,14 @@ static char *load_input(int fd, const char *path);
 
 static void sigint_handler(int UNUSED(sig))
 {
-	g_states |= STATE_INTERRUPTED;
+	g_state.interrupt = 1;
+}
+
+static void clean_exit_sighandler(int UNUSED(sig))
+{
+	exitcurses();
+	/* This triggers cleanup() thanks to atexit() */
+	exit(EXIT_SUCCESS);
 }
 
 static char *xitoa(uint val)
@@ -814,22 +823,22 @@ static inline bool xconfirm(int c)
 
 static int get_input(const char *prompt)
 {
-	int r;
-
 	if (prompt)
 		printmsg(prompt);
 	cleartimeout();
+
+	int r = getch();
+
 #ifdef KEY_RESIZE
-	do {
-		r = getch();
-		if (r == KEY_RESIZE && prompt) {
+	while (r == KEY_RESIZE) {
+		if (prompt) {
 			clearoldprompt();
 			xlines = LINES;
 			printmsg(prompt);
 		}
-	} while (r == KEY_RESIZE);
-#else
-	r = getch();
+
+		r = getch();
+	}
 #endif
 	settimeout();
 	return r;
@@ -1546,7 +1555,7 @@ static bool initcurses(void *oldmask)
 	}
 
 	settimeout(); /* One second */
-	set_escdelay(25);
+	set_escdelay(0);
 	return TRUE;
 }
 
@@ -1579,11 +1588,12 @@ static pid_t xfork(uchar flag)
 {
 	int status;
 	pid_t p = fork();
+	struct sigaction dfl_act = {.sa_handler = SIG_DFL};
 
 	if (p > 0) {
 		/* the parent ignores the interrupt, quit and hangup signals */
-		oldsighup = signal(SIGHUP, SIG_IGN);
-		oldsigtstp = signal(SIGTSTP, SIG_DFL);
+		sigaction(SIGHUP, &(struct sigaction){.sa_handler = SIG_IGN}, &oldsighup);
+		sigaction(SIGTSTP, &dfl_act, &oldsigtstp);
 	} else if (p == 0) {
 		/* We create a grandchild to detach */
 		if (flag & F_NOWAIT) {
@@ -1592,10 +1602,10 @@ static pid_t xfork(uchar flag)
 			if (p > 0)
 				_exit(EXIT_SUCCESS);
 			else if (p == 0) {
-				signal(SIGHUP, SIG_DFL);
-				signal(SIGINT, SIG_DFL);
-				signal(SIGQUIT, SIG_DFL);
-				signal(SIGTSTP, SIG_DFL);
+				sigaction(SIGHUP, &dfl_act, NULL);
+				sigaction(SIGINT, &dfl_act, NULL);
+				sigaction(SIGQUIT, &dfl_act, NULL);
+				sigaction(SIGTSTP, &dfl_act, NULL);
 
 				setsid();
 				return p;
@@ -1606,10 +1616,10 @@ static pid_t xfork(uchar flag)
 		}
 
 		/* so they can be used to stop the child */
-		signal(SIGHUP, SIG_DFL);
-		signal(SIGINT, SIG_DFL);
-		signal(SIGQUIT, SIG_DFL);
-		signal(SIGTSTP, SIG_DFL);
+		sigaction(SIGHUP, &dfl_act, NULL);
+		sigaction(SIGINT, &dfl_act, NULL);
+		sigaction(SIGQUIT, &dfl_act, NULL);
+		sigaction(SIGTSTP, &dfl_act, NULL);
 	}
 
 	/* This is the parent waiting for the child to create grandchild*/
@@ -1637,8 +1647,8 @@ static int join(pid_t p, uchar flag)
 	}
 
 	/* restore parent's signal handling */
-	signal(SIGHUP, oldsighup);
-	signal(SIGTSTP, oldsigtstp);
+	sigaction(SIGHUP, &oldsighup, NULL);
+	sigaction(SIGTSTP, &oldsigtstp, NULL);
 
 	return status;
 }
@@ -1706,7 +1716,7 @@ static int spawn(char *file, char *arg1, char *arg2, uchar flag)
 
 		DPRINTF_D(pid);
 
-		if (flag & F_CONFIRM) {
+		if ((flag & F_CONFIRM) || ((flag & F_CHKRTN) && retstatus)) {
 			printf("%s", messages[MSG_CONTINUE]);
 #ifndef NORL
 			fflush(stdout);
@@ -1770,7 +1780,7 @@ static void opstr(char *buf, char *op)
 
 static void rmmulstr(char *buf)
 {
-	if (g_states & STATE_TRASH)
+	if (g_state.trash)
 		snprintf(buf, CMD_LEN_MAX, "xargs -0 trash-put < %s", selpath);
 	else
 		snprintf(buf, CMD_LEN_MAX, "xargs -0 sh -c 'rm -%cr \"$0\" \"$@\" < /dev/tty' < %s",
@@ -1779,13 +1789,13 @@ static void rmmulstr(char *buf)
 
 static void xrm(char *fpath)
 {
-	if (g_states & STATE_TRASH)
+	if (g_state.trash)
 		spawn("trash-put", fpath, NULL, F_NORMAL);
 	else {
 		char rm_opts[] = "-ir";
 
 		rm_opts[1] = confirm_force(FALSE);
-		spawn("rm", rm_opts, fpath, F_NORMAL);
+		spawn("rm", rm_opts, fpath, F_NORMAL | F_CHKRTN);
 	}
 }
 
@@ -1845,9 +1855,8 @@ static bool cpmv_rename(int choice, const char *path)
 	}
 
 	snprintf(buf, sizeof(buf), patterns[P_CPMVRNM], path, g_tmpfpath, cmd);
-	spawn(utils[UTIL_SH_EXEC], buf, NULL, F_CLI);
-	ret = TRUE;
-
+	if (!spawn(utils[UTIL_SH_EXEC], buf, NULL, F_CLI | F_CHKRTN))
+		ret = TRUE;
 finish:
 	if (fd >= 0)
 		close(fd);
@@ -1886,8 +1895,10 @@ static bool cpmvrm_selection(enum action sel, char *path)
 		break;
 	}
 
-	if (sel != SEL_CPMVAS)
-		spawn(utils[UTIL_SH_EXEC], g_buf, NULL, F_CLI);
+	if (sel != SEL_CPMVAS && spawn(utils[UTIL_SH_EXEC], g_buf, NULL, F_CLI | F_CHKRTN)) {
+		printmsg(messages[MSG_FAILED]);
+		return FALSE;
+	}
 
 	/* Clear selection on move or delete */
 	if (sel != SEL_CP)
@@ -2319,7 +2330,7 @@ static int nextsel(int presel)
 			c = getch();
 			if (c != ERR) {
 				ungetch(c);
-				c = CONTROL('S');
+				c = ';';
 			} else
 				c = 27;
 			settimeout();
@@ -2589,7 +2600,7 @@ static int filterentries(char *path, char *lastname)
 		case 27: /* Exit filter mode on Escape and Alt+key */
 			if (handle_alt_key(ch) != ERR) {
 				unget_wch(*ch);
-				*ch = CONTROL('S');
+				*ch = ';';
 			}
 			goto end;
 		}
@@ -3066,9 +3077,9 @@ static char *get_kv_val(kv *kvarr, char *buf, int key, uchar max, uchar id)
 
 static void resetdircolor(int flags)
 {
-	if (cfg.dircolor && !(flags & DIR_OR_LINK_TO_DIR)) {
+	if (g_state.dircolor && !(flags & DIR_OR_LINK_TO_DIR)) {
 		attroff(COLOR_PAIR(cfg.curctx + 1) | A_BOLD);
-		cfg.dircolor = 0;
+		g_state.dircolor = 0;
 	}
 }
 
@@ -3689,9 +3700,11 @@ static bool show_stats(const char *fpath, const struct stat *sb)
 			}
 			fprintf(fp, " %s\n  ", begin);
 
+#ifdef FILE_MIME_OPTS
 			/* Show the file mime type */
 			get_output(g_buf, CMD_LEN_MAX, "file", FILE_MIME_OPTS, fpath, FALSE);
 			fprintf(fp, "%s", g_buf);
+#endif
 		}
 	}
 
@@ -4121,12 +4134,12 @@ static void show_help(const char *path)
 		"1     Dn j ^J  Down              PgDn J  Scroll down\n"
 		"1        Lt h  Parent           ~ ` @ -  HOME, /, start, last\n"
 		"1    Ret Rt l  Open                   f  First file/match\n"
-		"1        g ^A  Top                 . F5  Toggle hidden\n"
-		"1        G ^E  End                    0  Lock terminal\n"
+		"1        g ^A  Top                    .  Toggle hidden\n"
+		"1        G ^E  End                    +  Toggle auto-advance\n"
 		"1        b ^/  Bookmark key           ,  Pin CWD\n"
-		"1         1-4  Context 1-4   (Sh)Tab <>  Cycle context\n"
+		"1         1-4  Context 1-4           <>  Cycle context\n"
 		"1           /  Filter                ^N  Toggle type-to-nav\n"
-		"1         Esc  Exit prompt           ^L  Redraw/clear prompt\n"
+		"1         Esc  Send to FIFO          ^L  Redraw/clear prompt\n"
 		"1           ?  Help, conf             +  Toggle auto-advance\n"
 		"1           q  Quit context          ^G  QuitCD\n"
 		"1          ^Q  Quit                   Q  Quit with err\n"
@@ -4135,17 +4148,17 @@ static void show_help(const char *path)
 		"1           i  File details           d  Detail mode toggle\n"
 		"1          ^R  Rename/dup             r  Batch rename\n"
 		"1           z  Archive                e  Edit in EDITOR\n"
-		"5Space ^J  (Un)select              m ^K  Mark range/clear\n"
+		"1         Tab  (Un)select          m ^K  Mark range/clear\n"
 		"1        p ^P  Copy sel here          a  Select all\n"
 		"1        v ^V  Move sel here       w ^W  Cp/mv sel as\n"
 		"1        x ^X  Delete                 E  Edit sel\n"
 		"1           *  Toggle exe                Export list\n"
 		"1MISC\n"
-		"1    Alt ; ^S  Select plugin          =  Launch app\n"
+		"1       Space  Select plugin          =  Launch app\n"
 		"1        ! ^]  Shell                  ]  Cmd prompt\n"
 		"1           c  Connect remote         u  Unmount\n"
 		"1        t ^T  Sort toggles           s  Manage session\n"
-		"1           T  Set time type\n"
+		"1           T  Set time type          0  Lock\n"
 	};
 
 	fd = create_tmp_file();
@@ -4158,7 +4171,7 @@ static void show_help(const char *path)
 		return;
 	}
 
-	if ((g_states & STATE_FORTUNE) && getutil("fortune"))
+	if (g_state.fortune && getutil("fortune"))
 		pipetof("fortune -s", fp);
 
 	start = end = helpstr;
@@ -4311,9 +4324,9 @@ static bool run_selected_plugin(char **path, const char *file, char *runfile, ch
 	bool cmd_as_plugin = FALSE;
 	uchar flags = 0;
 
-	if (!(g_states & STATE_PLUGIN_INIT)) {
+	if (!g_state.pluginit) {
 		plctrl_init();
-		g_states |= STATE_PLUGIN_INIT;
+		g_state.pluginit = 1;
 	}
 
 	if (*file == '_') {
@@ -4542,7 +4555,7 @@ static int dentfill(char *path, struct entry **dents)
 
 					dir_blocks += dirwalk(buf, &sb);
 
-					if (g_states & STATE_INTERRUPTED)
+					if (g_state.interrupt)
 						goto exit;
 				}
 			} else {
@@ -4641,7 +4654,7 @@ static int dentfill(char *path, struct entry **dents)
 				else
 					num_files = num_saved;
 
-				if (g_states & STATE_INTERRUPTED)
+				if (g_state.interrupt)
 					goto exit;
 			} else {
 				dentp->blocks = (cfg.apparentsz ? sb.st_size : sb.st_blocks);
@@ -4722,7 +4735,7 @@ static void populate(char *path, char *lastname)
 }
 
 #ifndef NOFIFO
-static void notify_fifo()
+static void notify_fifo(bool force)
 {
 	if (fifofd == -1) {
 		fifofd = open(fifopath, O_WRONLY|O_NONBLOCK|O_CLOEXEC);
@@ -4737,7 +4750,7 @@ static void notify_fifo()
 
 	static struct entry lastentry;
 
-	if (!memcmp(&lastentry, &dents[cur], sizeof(struct entry)))
+	if (!force && !memcmp(&lastentry, &dents[cur], sizeof(struct entry)))
 		return;
 
 	lastentry = dents[cur];
@@ -4784,7 +4797,7 @@ static void move_cursor(int target, int ignore_scrolloff)
 
 #ifndef NOFIFO
 	if (fifopath)
-		notify_fifo();
+		notify_fifo(FALSE);
 #endif
 }
 
@@ -5030,7 +5043,7 @@ static void statusbar(char *path)
 
 		printw("%d/%d [%s:%s] %cu:%s free:%s files:%lu %lldB %s\n",
 		       cur + 1, ndents, (cfg.selmode ? "s" : ""),
-		       ((g_states & STATE_RANGESEL) ? "*" : (nselected ? xitoa(nselected) : "")),
+		       (g_state.rangesel ? "*" : (nselected ? xitoa(nselected) : "")),
 		       (cfg.apparentsz ? 'a' : 'd'), buf, coolsize(get_fs_info(path, FREE)),
 		       num_files, (ll)pent->blocks << blk_shift, ptr);
 	} else { /* light or detail mode */
@@ -5039,8 +5052,7 @@ static void statusbar(char *path)
 		getorderstr(sort);
 
 		printw("%d/%d [%s:%s] %s", cur + 1, ndents, (cfg.selmode ? "s" : ""),
-			 ((g_states & STATE_RANGESEL) ? "*" : (nselected ? xitoa(nselected) : "")),
-			 sort);
+			 (g_state.rangesel ? "*" : (nselected ? xitoa(nselected) : "")), sort);
 
 		/* Timestamp */
 		print_time(&pent->t);
@@ -5118,8 +5130,8 @@ static void redraw(char *path)
 	char *ptr = path;
 
 	// Fast redraw
-	if (g_states & STATE_MOVE_OP) {
-		g_states &= ~STATE_MOVE_OP;
+	if (g_state.move) {
+		g_state.move = 0;
 
 		if (ndents && (last_curscroll == curscroll))
 			return draw_line(path, ncols);
@@ -5194,16 +5206,16 @@ static void redraw(char *path)
 	ncols = adjust_cols(ncols);
 
 	attron(COLOR_PAIR(cfg.curctx + 1) | A_BOLD);
-	cfg.dircolor = 1;
+	g_state.dircolor = 1;
 
 	/* Print listing */
 	for (i = curscroll; i < ndents && i < curscroll + onscreen; ++i)
 		printptr(&dents[i], ncols, i == cur);
 
 	/* Must reset e.g. no files in dir */
-	if (cfg.dircolor) {
+	if (g_state.dircolor) {
 		attroff(COLOR_PAIR(cfg.curctx + 1) | A_BOLD);
-		cfg.dircolor = 0;
+		g_state.dircolor = 0;
 	}
 
 	statusbar(path);
@@ -5241,8 +5253,7 @@ static bool browse(char *ipath, const char *session, int pkey)
 	MEVENT event;
 	struct timespec mousetimings[2] = {{.tv_sec = 0, .tv_nsec = 0}, {.tv_sec = 0, .tv_nsec = 0} };
 	int mousedent[2] = {-1, -1};
-	bool currentmouse = 1;
-	bool rightclicksel = 0;
+	bool currentmouse = 1, rightclicksel = 0;
 #endif
 
 #ifndef DIR_LIMITED_SELECTION
@@ -5259,7 +5270,7 @@ static bool browse(char *ipath, const char *session, int pkey)
 		g_ctx[0].c_last[0] = '\0';
 		lastdir = g_ctx[0].c_last; /* last visited directory */
 
-		if (g_states & STATE_INITFILE) {
+		if (g_state.initfile) {
 			xstrsncpy(g_ctx[0].c_name, xbasename(ipath), sizeof(g_ctx[0].c_name));
 			xdirname(ipath);
 		} else
@@ -5321,8 +5332,8 @@ begin:
 #endif
 
 	populate(path, lastname);
-	if (g_states & STATE_INTERRUPTED) {
-		g_states &= ~STATE_INTERRUPTED;
+	if (g_state.interrupt) {
+		g_state.interrupt = 0;
 		cfg.apparentsz = 0;
 		cfg.blkorder = 0;
 		blk_shift = BLK_SHIFT_512;
@@ -5460,8 +5471,12 @@ nochange:
 					(event.bstate == BUTTON1_PRESSED ||
 					 event.bstate == BUTTON3_PRESSED)) {
 				r = curscroll + (event.y - 2);
-				move_cursor(r, 1);
-
+				if (r != cur)
+					move_cursor(r, 1);
+#ifndef NOFIFO
+				else if (event.bstate == BUTTON1_PRESSED)
+					notify_fifo(TRUE);
+#endif
 				/* Handle right click selection */
 				if (event.bstate == BUTTON3_PRESSED) {
 					rightclicksel = 1;
@@ -5642,7 +5657,7 @@ nochange:
 				spawn(opener, newpath, NULL, opener_flags);
 
 				/* Move cursor to the next entry if not the last entry */
-				if ((g_states & STATE_AUTONEXT) && cur != ndents - 1)
+				if (g_state.autonext && cur != ndents - 1)
 					move_cursor((cur + 1) % ndents, 0);
 				continue;
 			}
@@ -5659,7 +5674,7 @@ nochange:
 		case SEL_HOME: // fallthrough
 		case SEL_END: // fallthrough
 		case SEL_FIRST:
-			g_states |= STATE_MOVE_OP;
+			g_state.move = 1;
 			if (ndents)
 				handle_screen_move(sel);
 			break;
@@ -5727,6 +5742,12 @@ nochange:
 		case SEL_CTX2: // fallthrough
 		case SEL_CTX3: // fallthrough
 		case SEL_CTX4:
+#ifdef CTX8
+		case SEL_CTX5:
+		case SEL_CTX6:
+		case SEL_CTX7:
+		case SEL_CTX8:
+#endif
 			r = handle_context_switch(sel);
 			if (r < 0)
 				continue;
@@ -5877,7 +5898,7 @@ nochange:
 				show_help(path); // fallthrough
 			case SEL_AUTONEXT:
 				if (sel == SEL_AUTONEXT)
-					g_states ^= STATE_AUTONEXT;
+					g_state.autonext ^= 1;
 				if (cfg.filtermode)
 					presel = FILTER;
 				if (ndents)
@@ -5910,8 +5931,8 @@ nochange:
 				goto nochange;
 
 			startselection();
-			if (g_states & STATE_RANGESEL)
-				g_states &= ~STATE_RANGESEL;
+			if (g_state.rangesel)
+				g_state.rangesel = 0;
 
 			/* Toggle selection status */
 			dents[cur].flags ^= FILE_SELECTED;
@@ -5948,14 +5969,14 @@ nochange:
 				goto nochange;
 
 			startselection();
-			g_states ^= STATE_RANGESEL;
+			g_state.rangesel ^= 1;
 
 			if (stat(path, &sb) == -1) {
 				printwarn(&presel);
 				goto nochange;
 			}
 
-			if (g_states & STATE_RANGESEL) { /* Range selection started */
+			if (g_state.rangesel) { /* Range selection started */
 #ifndef DIR_LIMITED_SELECTION
 				inode = sb.st_ino;
 #endif
@@ -5987,8 +6008,8 @@ nochange:
 					goto nochange;
 
 				startselection();
-				if (g_states & STATE_RANGESEL)
-					g_states &= ~STATE_RANGESEL;
+				if (g_state.rangesel)
+					g_state.rangesel = 0;
 
 				selstartid = 0;
 				selendid = ndents - 1;
@@ -6451,7 +6472,7 @@ nochange:
 					setdirwatch();
 					goto begin;
 				}
-			} else if (!(g_states & STATE_FORCEQUIT)) {
+			} else if (!g_state.forcequit) {
 				for (r = 0; r < CTX_MAX; ++r)
 					if (r != cfg.curctx && g_ctx[r].c_cfg.ctxactive) {
 						r = get_input(messages[MSG_QUIT_ALL]);
@@ -6471,20 +6492,21 @@ nochange:
 			if (sel == SEL_QUITCD || getenv("NNN_TMPFILE"))
 				cfg.picker ? selbufpos = 0 : write_lastdir(path);
 			return sel == SEL_QUITFAIL ? EXIT_FAILURE : EXIT_SUCCESS;
+#ifndef NOFIFO
+		case SEL_FIFO:
+			notify_fifo(TRUE);
+			goto nochange;
+#endif
 		default:
-			r = FALSE;
-			if (xlines != LINES || xcols != COLS) {
-				setdirwatch(); /* Terminal resized */
-				r = TRUE;
-			} else if (idletimeout && idle == idletimeout)
+			if (xlines != LINES || xcols != COLS)
+				continue;
+
+			if (idletimeout && idle == idletimeout)
 				lock_terminal(); /* Locker */
 
 			idle = 0;
 			if (ndents)
 				copycurname();
-
-			if (r)
-				continue;
 
 			goto nochange;
 		} /* switch (sel) */
@@ -6560,8 +6582,7 @@ static char *make_tmp_tree(char **paths, ssize_t entries, const char *prefix)
 
 static char *load_input(int fd, const char *path)
 {
-	/* 512 KiB chunk size */
-	ssize_t i, chunk_count = 1, chunk = 512 * 1024, entries = 0;
+	ssize_t i, chunk_count = 1, chunk = 512 * 1024 /* 512 KiB chunk size */, entries = 0;
 	char *input = malloc(sizeof(char) * chunk), *tmpdir = NULL;
 	char cwd[PATH_MAX], *next;
 	size_t offsets[LIST_FILES_MAX];
@@ -6699,7 +6720,7 @@ malloc_2:
 		free(paths[i]);
 malloc_1:
 	if (msgnum) {
-		if (g_states & STATE_PLUGIN_INIT) {
+		if (g_state.pluginit) {
 			printmsg(messages[msgnum]);
 			xdelay(XDELAY_INTERVAL_MS);
 		} else
@@ -6891,10 +6912,11 @@ static void cleanup(void)
 	free(bookmark);
 	free(plug);
 #ifndef NOFIFO
-	if (g_states & STATE_AUTOFIFO)
+	if (g_state.autofifo)
 		unlink(fifopath);
 #endif
-
+	if (g_state.pluginit)
+		unlink(g_pipepath);
 #ifdef DBGMODE
 	disabledbg();
 #endif
@@ -6925,7 +6947,7 @@ int main(int argc, char *argv[])
 		switch (opt) {
 #ifndef NOFIFO
 		case 'a':
-			g_states |= STATE_AUTOFIFO;
+			g_state.autofifo = 1;
 			break;
 #endif
 		case 'A':
@@ -6954,7 +6976,7 @@ int main(int argc, char *argv[])
 #endif
 			break;
 		case 'F':
-			g_states |= STATE_FORTUNE;
+			g_state.fortune = 1;
 			break;
 		case 'g':
 			cfg.regex = 1;
@@ -7000,7 +7022,7 @@ int main(int argc, char *argv[])
 				pkey = (uchar)optarg[0];
 			break;
 		case 'Q':
-			g_states |= STATE_FORCEQUIT;
+			g_state.forcequit = 1;
 			break;
 		case 'r':
 #ifdef __linux__
@@ -7039,6 +7061,8 @@ int main(int argc, char *argv[])
 			usage();
 			return EXIT_FAILURE;
 		}
+		if (env_opts_id == 0)
+			env_opts_id = -1;
 	}
 
 #ifdef DBGMODE
@@ -7131,7 +7155,7 @@ int main(int argc, char *argv[])
 			}
 
 			if (!S_ISDIR(sb.st_mode))
-				g_states |= STATE_INITFILE;
+				g_state.initfile = 1;
 
 			if (session)
 				session = NULL;
@@ -7172,7 +7196,7 @@ int main(int argc, char *argv[])
 
 #ifndef NOFIFO
 	/* Create fifo */
-	if (g_states & STATE_AUTOFIFO) {
+	if (g_state.autofifo) {
 		g_tmpfpath[tmpfplen - 1] = '\0';
 		snprintf(g_buf, CMD_LEN_MAX, "%s/nnn-fifo.%d", g_tmpfpath, getpid());
 		setenv("NNN_FIFO", g_buf, TRUE);
@@ -7185,7 +7209,7 @@ int main(int argc, char *argv[])
 			return EXIT_FAILURE;
 		}
 
-		signal(SIGPIPE, SIG_IGN);
+		sigaction(SIGPIPE, &(struct sigaction){.sa_handler = SIG_IGN}, NULL);
 	}
 #endif
 
@@ -7212,7 +7236,7 @@ int main(int argc, char *argv[])
 
 	/* Configure trash preference */
 	if (xgetenv_set(env_cfg[NNN_TRASH]))
-		g_states |= STATE_TRASH;
+		g_state.trash = 1;
 
 	/* Ignore/handle certain signals */
 	struct sigaction act = {.sa_handler = sigint_handler};
@@ -7221,7 +7245,20 @@ int main(int argc, char *argv[])
 		xerror();
 		return EXIT_FAILURE;
 	}
-	signal(SIGQUIT, SIG_IGN);
+
+	act.sa_handler = clean_exit_sighandler;
+
+	if (sigaction(SIGTERM, &act, NULL) < 0 || sigaction(SIGHUP, &act, NULL) < 0) {
+		xerror();
+		return EXIT_FAILURE;
+	}
+
+	act.sa_handler = SIG_IGN;
+
+	if (sigaction(SIGQUIT, &act, NULL) < 0) {
+		xerror();
+		return EXIT_FAILURE;
+	}
 
 #ifndef NOLOCALE
 	/* Set locale */
@@ -7314,7 +7351,7 @@ int main(int argc, char *argv[])
 #endif
 
 #ifndef NOFIFO
-	notify_fifo();
+	notify_fifo(FALSE);
 	if (fifofd != -1)
 		close(fifofd);
 #endif
