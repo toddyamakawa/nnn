@@ -10,6 +10,7 @@
 .Op Ar -A
 .Op Ar -b key
 .Op Ar -c
+.Op Ar -C
 .Op Ar -d
 .Op Ar -e
 .Op Ar -E
@@ -67,6 +68,9 @@ supports the following options:
 .Pp
 .Fl c
         indicates that the opener is a cli-only opener (overrides -e)
+.Pp
+.Fl C
+        place hardware cursor on hovered entry
 .Pp
 .Fl d
         detail mode
@@ -152,8 +156,8 @@ uses \fIxdg-open\fR (on Linux), \fIopen(1)\fR (on macOS), \fIcygstart\fR on
 (Cygwin) and \fIopen\fR on (Haiku) as the desktop opener. It's also possible
 to specify a custom opener. See ENVIRONMENT section.
 .Sh CONTEXTS
-Explore multiple directories simultaneously with 4 contexts. The status is
-shown in the top left corner:
+Open multiple locations with 4 contexts. The status is shown in the top left
+corner:
 .Pp
 - the current context is in reverse video
 .br
@@ -167,9 +171,7 @@ its own color. See ENVIRONMENT section.
 Sessions are a way to save and restore states of work. A session stores the
 settings and contexts.
 .Pp
-Sessions can be loaded dynamically from within a running
-.Nm
-instance, or with a program option.
+Sessions can be loaded dynamically at runtime or with a program option.
 .Pp
 When a session is loaded dynamically, the last working session is saved
 automatically to a dedicated -- "last session" -- session file. The "last
@@ -278,16 +280,20 @@ file from selection after you navigate away from its directory. Editing doesn't
 end the selection mode. You can add more files to the selection and edit the
 list again. If no file is selected in the current session, this option attempts
 to list the selection file.
-.Sh LIST INPUT
-.Nm
-can receive a list of NUL-separated ('\\0') file paths as input. Paths and can
-be relative to the current directory or absolute.
+.Sh FIND AND LIST
+There are two ways to search and list:
 .Pp
-Input is limited by 65,536 paths or 256 MiB of input.
+- feed a list of file paths as input
+.br
+- search using a plugin (e.g. \fIfinder\fR) and list the results
 .Pp
-Start
+File paths must be NUL-separated ('\\0'). Paths and can be relative to the
+current directory or absolute. Invalid paths in the input are ignored. Input
+limit is 65,536 paths or 256 MiB of data.
+.Pp
+To list the input stream, start
 .Nm
-in this mode by writing to its standard input. E.g., to list files in current
+by writing to its standard input. E.g., to list files in current
 directory larger than
 1M:
 .Bd -literal
@@ -315,8 +321,6 @@ targets, after which they might become invalid.
 .Pp
 Right arrow or 'l' on a symlink in the listing dir takes to the target file.
 Press '-' to return to the listing dir. Press 'Enter' to open the symlink.
-.Pp
-\fBInvalid paths in the input are ignored.\fR
 .Sh UNITS
 The minimum file size unit is byte (B). The rest are K, M, G, T, P, E, Z, Y
 (powers of 1024), same as the default units in \fIls\fR.
