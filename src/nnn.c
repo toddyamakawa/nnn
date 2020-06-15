@@ -1765,7 +1765,7 @@ static char *xgetenv(const char * const name, char *fallback)
 }
 
 /* Checks if an env variable is set to 1 */
-static bool xgetenv_set(const char *name)
+static inline bool xgetenv_set(const char *name)
 {
 	char *value = getenv(name);
 
@@ -3010,7 +3010,7 @@ static int xlink(char *prefix, char *path, char *curfname, char *buf, int *prese
 
 static bool parsekvpair(kv **arr, char **envcpy, const uchar id, uchar *items)
 {
-	bool next = TRUE;
+	bool new = TRUE;
 	const uchar INCR = 8;
 	uint i = 0;
 	kv *kvarr = NULL;
@@ -3028,7 +3028,7 @@ static bool parsekvpair(kv **arr, char **envcpy, const uchar id, uchar *items)
 	ptr = *envcpy;
 
 	while (*ptr && i < 100) {
-		if (next) {
+		if (new) {
 			if (!(i & (INCR - 1))) {
 				kvarr = xrealloc(kvarr, sizeof(kv) * (i + INCR));
 				*arr = kvarr;
@@ -3043,13 +3043,14 @@ static bool parsekvpair(kv **arr, char **envcpy, const uchar id, uchar *items)
 				return FALSE;
 			kvarr[i].off = ptr - *envcpy;
 			++i;
+
+			new = FALSE;
 		}
 
 		if (*ptr == ';') {
 			*ptr = '\0';
-			next = TRUE;
-		} else if (next)
-			next = FALSE;
+			new = TRUE;
+		}
 
 		++ptr;
 	}
@@ -5108,7 +5109,7 @@ static void statusbar(char *path)
 		xstrsncpy(buf, coolsize(dir_blocks << blk_shift), 12);
 
 		printw("%d/%d [%s:%s] %cu:%s free:%s files:%lu %lldB %s\n",
-		       cur + 1, ndents, (g_state.selmode ? "s" : ""),
+		       cur + 1, ndents, (g_state.selmode ? "+" : ""),
 		       (g_state.rangesel ? "*" : (nselected ? xitoa(nselected) : "")),
 		       (cfg.apparentsz ? 'a' : 'd'), buf, coolsize(get_fs_info(path, FREE)),
 		       num_files, (ll)pent->blocks << blk_shift, ptr);
@@ -5117,7 +5118,7 @@ static void statusbar(char *path)
 
 		getorderstr(sort);
 
-		printw("%d/%d [%s:%s] %s", cur + 1, ndents, (g_state.selmode ? "s" : ""),
+		printw("%d/%d [%s:%s] %s", cur + 1, ndents, (g_state.selmode ? "+" : ""),
 			 (g_state.rangesel ? "*" : (nselected ? xitoa(nselected) : "")), sort);
 
 		/* Timestamp */
