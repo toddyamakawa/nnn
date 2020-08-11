@@ -28,30 +28,30 @@ It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw
 
 ## Black magic! :dark_sunglasses:
 
-- Load, sort, filter thousands of files instantly
+- Instantly load, sort, filter thousands of files
 - Type to navigate with automatic dir selection
-- Select files from anywhere (not just a single dir)
-- Never lose context - start where you quit `nnn`
-- Edit and preview markdown, man page, html
-- Open a file and auto-advance to the next
-- Export (filtered) list of visible files
 - find/fd/grep/ripgrep/fzf from `nnn` and list in `nnn`
+- Never lose context - start where you quit
+- Mount any cloud storage service in a few keypresses
+- Select files from anywhere (not just a single dir)
 - Unlimited bookmarks, plugins, cmds with custom hotkeys
 - Write a plugin in any language you know
+- Edit and preview markdown, man page, html
+- Open a file and auto-advance to the next
+- Filter filtered entries
+- Export (filtered) list of visible files
 - Configure the middle mouse click to do anything
 - Fuzzy search subtree and open a file (or its parent dir)
 - Load four dirs with custom settings at once
 - Notifications on cp, mv, rm completion
 - Auto-sync selection to system clipboard
+- Access selection from another instance of `nnn`
 - Open text files detached in another pane/tab/window
+- Mount and modify archives
 - Create files/dirs/duplicates with parents (like `mkdir -p`)
 - Toggle hidden with <kbd>.</kbd>, visit HOME with <kbd>~</kbd>, last dir with <kbd>-</kbd>
-- Pin a frequently visited dir at runtime
-- Mount any cloud storage service in a few keypresses
-- Mount and modify archives
-- Filter filtered entries
+- Mark a frequently visited dir at runtime
 - Sort by modification, access and inode change time
-- Access selection from another instance of `nnn`
 - Compile out/in features with make options
 - Watch matrix text fly or read fortune messages
 - Configure in 5 minutes!
@@ -60,18 +60,20 @@ It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw
 
 - Frugal
   - Typically needs less than 3.5MB resident memory
-  - Works with 8-bit colors
+  - Works with 8 colors (and xterm 256 colors)
   - Disk-IO sensitive (few disk reads and writes)
   - No FPU usage (all integer maths, even for file size)
   - Minimizes screen refresh with fast line redraws
-  - Tiny binary (typically less than 100KB)
+  - Tiny binary (typically around 100KB)
+  - 1-column mode for smaller terminals and form factors
 - Portable
-  - Statically-linked binary available
   - Language-agnostic plugins
+  - Static binary available (no need to install)
   - Minimal library deps, easy to compile
   - Compile in/out features with make variables
   - No config file, minimal config with sensible defaults
   - Widely available on many packagers
+  - Touch enabled, comfortable on handhelds too!
   - Unicode support
 - Quality
   - Privacy-aware (no unconfirmed user data collection)
@@ -84,9 +86,9 @@ It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw
 - Navigation
   - *Type-to-nav* mode with dir auto-select
   - Contexts (_aka_ tabs/workspaces) with custom colors
-  - Sessions, bookmarks with hotkeys; pin and visit a dir
+  - Sessions, bookmarks with hotkeys; mark and visit a dir
   - Remote mounts (needs sshfs, rclone)
-  - Familiar shortcuts (arrows, <kbd>~</kbd>, <kbd>-</kbd>, <kbd>@</kbd>), quick reference
+  - Familiar shortcuts (arrows, <kbd>~</kbd>, <kbd>-</kbd>, <kbd>@</kbd>), quick look-up
   - CD on quit (*easy* shell integration)
   - Auto-advance on opening files
 - Search
@@ -96,11 +98,12 @@ It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw
 - Sort
   - Ordered pure numeric names by default (visit _/proc_)
   - Case-insensitive version (_aka_ natural) sort
-  - By file name, access/change/mod (default) time, size, extension
+  - By name, access/change/mod (default) time, size, extn
   - Reverse sort
 - Mimes
   - Open with desktop opener or specify a custom opener
   - Preview hovered files in FIFO-based previewer
+  - Plugins for image and video thumbnails
   - Create, list, extract, mount (FUSE based) archives
   - Option to open all text files in EDITOR
 - Information
@@ -111,12 +114,12 @@ It runs smoothly on the Pi, [Termux](https://www.youtube.com/watch?v=AbaauM7gUJw
   - FreeDesktop compliant trash (needs trash-cli)
   - Cross-dir file/all/range selection
   - Batch renamer for selection or dir
-  - Display a list of files from stdin
+  - Display file list from stdin or plugin
   - Copy (as), move (as), delete, archive, link selection
   - Dir updates, notification on cp, mv, rm completion
   - Copy file paths to system clipboard on select
-  - Create (with parents), rename, duplicate (anywhere) files and dirs
-  - Launch GUI apps, run commands, spawn a shell, toggle executable
+  - Create (with parents), rename, duplicate files and dirs
+  - Launch apps, run commands, spawn a shell, toggle exe
   - Hovered file set as `$nnn` at prompt and spawned shell
   - Lock terminal after configurable idle timeout
   - Basic support for screen readers and braille displays
@@ -149,12 +152,12 @@ Visit the [ToDo list](https://github.com/jarun/nnn/issues/629) to contribute or 
 
 ## Elsewhere
 
-- [Wikipedia](https://en.wikipedia.org/wiki/Nnn_(file_manager))
 - [ArchWiki](https://wiki.archlinux.org/index.php/Nnn)
 - [FOSSMint](https://www.fossmint.com/nnn-linux-terminal-file-browser/)
 - [gHacks Tech News](https://www.ghacks.net/2019/11/01/nnn-is-an-excellent-command-line-based-file-manager-for-linux-macos-and-bsds/)
 - Hacker News [[1](https://news.ycombinator.com/item?id=18520898)] [[2](https://news.ycombinator.com/item?id=19850656)]
 - [It's FOSS](https://itsfoss.com/nnn-file-browser-linux/)
 - LinuxLinks [[1](https://www.linuxlinks.com/nnn-fast-and-flexible-file-manager/)] [[2](https://www.linuxlinks.com/bestconsolefilemanagers/)] [[3](https://www.linuxlinks.com/excellent-system-tools-nnn-portable-terminal-file-manager/)]
+- [Open Source For You](https://www.opensourceforu.com/2019/12/nnn-this-feature-rich-terminal-file-manager-will-enhance-your-productivity/)
 - [Suckless Rocks](https://suckless.org/rocks/)
 - [Ubuntu Full Circle Magazine - Issue 135](https://fullcirclemagazine.org/issue-135/)

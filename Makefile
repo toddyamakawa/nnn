@@ -80,6 +80,8 @@ CFLAGS += -Wall -Wextra
 CFLAGS += -std=c99
 #CFLAGS += -std=c11
 CFLAGS += -lrt
+# REVISIT: Add -Wshadow
+#CFLAGS += -Wshadow
 CFLAGS += $(CFLAGS_OPTIMIZATION)
 CFLAGS += $(CFLAGS_CURSES)
 
