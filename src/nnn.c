@@ -112,8 +112,12 @@
 #include "nnn.h"
 #include "dbg.h"
 
+#ifdef ICONS
+#include "icons.h"
+#endif
+
 /* Macro definitions */
-#define VERSION "3.3"
+#define VERSION "3.4"
 #define GENERAL_INFO "BSD 2-Clause\nhttps://github.com/jarun/nnn"
 #define SESSIONS_VERSION 1
 
@@ -681,6 +685,11 @@ static const char * const patterns[] = {
 #define C_SOC (C_PIP + 1) /* Socket: MediumOrchid1 */
 #define C_UND (C_SOC + 1) /* Unknown OR 0B regular/exe file: Red1 */
 
+#ifdef ICONS
+/* 0-9, A-Z, OTHER = 36. */
+static ushort icon_positions[37];
+#endif
+
 static char gcolors[] = "c1e2272e006033f7c6d6abc4";
 static uint fcolors[C_UND + 1] = {0};
 
@@ -1225,7 +1234,7 @@ static char confirm_force(bool selection)
 
 	int r = get_input(str);
 
-	if (r == 27)
+	if (r == ESC)
 		return '\0'; /* cancel */
 	if (r == 'y' || r == 'Y')
 		return 'f'; /* forceful */
@@ -1668,6 +1677,9 @@ static bool initcurses(void *oldmask)
 		} else
 			g_state.oldcolor = 1;
 
+		DPRINTF_D(COLORS);
+		DPRINTF_D(COLOR_PAIRS);
+
 		if (colors && *colors == '#') {
 			char *sep = strchr(colors, ';');
 
@@ -1713,8 +1725,34 @@ static bool initcurses(void *oldmask)
 		}
 	}
 
+#ifdef ICONS
+	if (!g_state.oldcolor) {
+		uchar icolors[256] = {0};
+		char c;
+
+		memset(icon_positions, 0x7f, sizeof(icon_positions));
+
+		for (uint i = 0; i < sizeof(icons_ext)/sizeof(struct icon_pair); ++i) {
+			c = TOUPPER(icons_ext[i].match[0]);
+			if (c >= 'A' && c <= 'Z') {
+				if (icon_positions[c - 'A' + 10] == 0x7f7f)
+					icon_positions[c - 'A' + 10] = i;
+			} else if (c >= '0' && c <= '9') {
+				if (icon_positions[c - '0'] == 0x7f7f)
+					icon_positions[c - '0'] = i;
+			} else if (icon_positions[36] == 0x7f7f)
+				icon_positions[36] = i;
+
+			if (icons_ext[i].color && !icolors[icons_ext[i].color]) {
+				init_pair(C_UND + 1 + icons_ext[i].color, icons_ext[i].color, -1);
+				icolors[icons_ext[i].color] = 1;
+			}
+		}
+	}
+#endif
+
 	settimeout(); /* One second */
-	set_escdelay(0);
+	set_escdelay(25);
 	return TRUE;
 }
 
@@ -2462,7 +2500,7 @@ static int handle_alt_key(wint_t *wch)
 	timeout(0);
 	int r = get_wch(wch);
 	if (r == ERR)
-		*wch = 27;
+		*wch = ESC;
 	cleartimeout();
 
 	return r;
@@ -2484,18 +2522,18 @@ static int nextsel(int presel)
 		//DPRINTF_S(keyname(c));
 
 		/* Handle Alt+key */
-		if (c == 27) {
+		if (c == ESC) {
 			timeout(0);
 			c = getch();
 			if (c != ERR) {
-				if (c == 27)
+				if (c == ESC)
 					c = CONTROL('L');
 				else {
 					ungetch(c);
 					c = ';';
 				}
 			} else
-				c = 27;
+				c = ESC;
 			settimeout();
 		}
 
@@ -2735,7 +2773,7 @@ static int filterentries(char *path, char *lastname)
 		case KEY_DC: // fallthrough
 		case KEY_BACKSPACE: // fallthrough
 		case '\b': // fallthrough
-		case 127: /* handle DEL */
+		case DEL: /* handle DEL */
 			if (len != 1) {
 				wln[--len] = '\0';
 				wcstombs(ln, wln, REGEX_MAX);
@@ -2769,9 +2807,9 @@ static int filterentries(char *path, char *lastname)
 		case KEY_MOUSE:
 			goto end;
 #endif
-		case 27: /* Exit filter mode on Escape and Alt+key */
+		case ESC: /* Exit filter mode on Escape and Alt+key */
 			if (handle_alt_key(ch) != ERR) {
-				if (*ch == 27) { /* Handle Alt + Esc */
+				if (*ch == ESC) { /* Handle Alt + Esc */
 					if (wln[1]) {
 						ln[REGEX_MAX - 1] = ln[1];
 						ln[1] = wln[1] = '\0';
@@ -2947,7 +2985,7 @@ static char *xreadline(const char *prefill, const char *prompt)
 				} else
 					continue;
 				// fallthrough
-			case 127: // fallthrough
+			case DEL: // fallthrough
 			case '\b': /* rhel25 sends '\b' for backspace */
 				if (pos > 0) {
 					memmove(buf + pos - 1, buf + pos,
@@ -2994,7 +3032,7 @@ static char *xreadline(const char *prefill, const char *prompt)
 				len -= pos;
 				pos = 0;
 				continue;
-			case 27: /* Exit prompt on Escape, but just filter out Alt+key */
+			case ESC: /* Exit prompt on Escape, but just filter out Alt+key */
 				if (handle_alt_key(ch) != ERR)
 					continue;
 
@@ -3425,6 +3463,66 @@ static char *get_lsperms(mode_t mode)
 	return bits;
 }
 
+#ifdef ICONS
+static const struct icon_pair * get_icon(const struct entry *ent){
+	ushort i = 0;
+
+	for (; i < sizeof(icons_name)/sizeof(struct icon_pair); ++i)
+		if (strcasecmp(ent->name, icons_name[i].match) == 0)
+			return &icons_name[i];
+
+	if (ent->flags & DIR_OR_LINK_TO_DIR)
+		return &dir_icon;
+
+	char *tmp = xextension(ent->name, ent->nlen);
+
+	if (!tmp) {
+		if (ent->mode & 0100)
+			return &exec_icon;
+
+		return &file_icon;
+	}
+
+	/* Skip the . */
+	++tmp;
+
+	if (*tmp >= '0' && *tmp <= '9')
+		i = *tmp - '0'; /* NUMBER 0-9 */
+	else if (TOUPPER(*tmp) >= 'A' && TOUPPER(*tmp) <= 'Z')
+		i = TOUPPER(*tmp) - 'A' + 10; /* LETTER A-Z */
+	else
+		i = 36; /* OTHER */
+
+	for (ushort j = icon_positions[i]; j < sizeof(icons_ext)/sizeof(struct icon_pair) &&
+			icons_ext[j].match[0] == icons_ext[icon_positions[i]].match[0]; ++j)
+		if (strcasecmp(tmp, icons_ext[j].match) == 0)
+			return &icons_ext[j];
+
+	/* If there's no match and the file is executable, icon that */
+	if (ent->mode & 0100)
+		return &exec_icon;
+
+	return &file_icon;
+}
+
+static void print_icon(const struct entry *ent, const int attrs)
+{
+	const struct icon_pair *picon = get_icon(ent);
+
+	addstr(ICON_PADDING_LEFT);
+	if (picon->color)
+		attron(COLOR_PAIR(C_UND + 1 + picon->color));
+	else if (attrs)
+		attron(attrs);
+	addstr(picon->icon);
+	if (picon->color)
+		attroff(COLOR_PAIR(C_UND + 1 + picon->color));
+	else if (attrs)
+		attroff(attrs);
+	addstr(ICON_PADDING_RIGHT);
+}
+#endif
+
 static void print_time(const time_t *timep)
 {
 	struct tm *t = localtime(timep);
@@ -3437,7 +3535,7 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 {
 	uchar pair = 0;
 	char ind = '\0';
-	int attrs = sel ? A_REVERSE : 0;
+	int attrs = 0;
 
 	switch (ent->mode & S_IFMT) {
 	case S_IFREG:
@@ -3508,6 +3606,13 @@ static void printent(const struct entry *ent, uint namecols, bool sel)
 
 	addch((ent->flags & FILE_SELECTED) ? '+' : ' ');
 
+#ifdef ICONS
+	if (!g_state.oldcolor)
+		print_icon(ent, attrs);
+#endif
+
+	if (sel)
+		attrs |= A_REVERSE;
 	if (attrs)
 		attron(attrs);
 
@@ -3622,14 +3727,16 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 		break;
 	}
 
-	addstr("  ");
-
 	if (g_state.oldcolor) {
+		addstr("  ");
 		if (!ln) {
 			attroff(A_DIM);
 			attrs ^=  A_DIM;
 		}
 	} else {
+#ifndef ICONS
+		addstr("  ");
+#endif
 		if (ent->flags & FILE_MISSING)
 			pair = C_MIS;
 		else {
@@ -3637,16 +3744,26 @@ static void printent_long(const struct entry *ent, uint namecols, bool sel)
 			attrs ^= (COLOR_PAIR(C_MIS));
 		}
 
-		if (pair && fcolors[pair]) {
+		if (pair && fcolors[pair])
 			attrs |= COLOR_PAIR(pair);
-			attron(attrs);
-		}
+#ifdef ICONS
+		attroff(attrs);
+		addstr("  ");
+		if (sel)
+			attrs &= ~A_REVERSE;
+		print_icon(ent, attrs);
+		if (sel)
+			attrs |= A_REVERSE;
+#endif
+		attron(attrs);
 	}
+
 #ifndef NOLOCALE
 	addwstr(unescape(ent->name, namecols));
 #else
 	addstr(unescape(ent->name, MIN(namecols, ent->nlen) + 1));
 #endif
+
 	if (attrs)
 		attroff(attrs);
 	if (ind2)
@@ -4446,7 +4563,11 @@ static void show_help(const char *path)
 	}
 
 	if (g_state.fortune && getutil("fortune"))
+#ifndef __HAIKU__
 		pipetof("fortune -s", fp);
+#else
+		pipetof("fortune", fp);
+#endif
 
 	start = end = helpstr;
 	while (*end) {
@@ -4971,7 +5092,7 @@ static int dentfill(char *path, struct entry **ppdents)
 			if (S_ISDIR(sb.st_mode))
 				dentp->flags |= DIR_OR_LINK_TO_DIR;
 #if !(defined(__sun) || defined(__HAIKU__)) /* no d_type */
-		} else if (dp->d_type == DT_DIR || (dp->d_type == DT_LNK && S_ISDIR(sb.st_mode))) {
+		} else if (dp->d_type == DT_DIR || ((dp->d_type == DT_LNK || dp->d_type == DT_UNKNOWN) && S_ISDIR(sb.st_mode))) {
 			dentp->flags |= DIR_OR_LINK_TO_DIR;
 #endif
 		}
@@ -5415,11 +5536,18 @@ static int adjust_cols(int ncols)
 		if (ncols < 36) {
 			cfg.showdetail ^= 1;
 			printptr = &printent;
-			ncols -= 3; /* Preceding space, indicator, newline */
-		} else
-			ncols -= 35;
-	} else
-		ncols -= 3; /* Preceding space, indicator, newline */
+		} else {
+			/* 3 more accounted for below */
+			ncols -= 32;
+		}
+	}
+
+/* 3 = Preceding space, indicator, newline */
+#ifdef ICONS
+	ncols -= 3 + xstrlen(ICON_PADDING_LEFT) + xstrlen(ICON_PADDING_RIGHT) + 1;
+#else
+	ncols -= 3;
+#endif
 
 	return ncols;
 }
@@ -5584,6 +5712,7 @@ static bool browse(char *ipath, const char *session, int pkey)
 	char rundir[PATH_MAX] __attribute__ ((aligned));
 	char runfile[NAME_MAX + 1] __attribute__ ((aligned));
 	char *path, *lastdir, *lastname, *dir, *tmp;
+	pEntry pent;
 	enum action sel;
 	struct stat sb;
 	int r = -1, presel, selstartid = 0, selendid = 0;
@@ -5837,7 +5966,7 @@ nochange:
 				    &mousetimings[currentmouse]);
 				mousedent[currentmouse] = cur;
 
-				/* Single click just selects, double click falls through to SEL_GOIN */
+				/* Single click just selects, double click falls through to SEL_OPEN */
 				if ((mousedent[0] != mousedent[1]) ||
 				  (((_ABSSUB(mousetimings[0].tv_sec, mousetimings[1].tv_sec) << 30)
 				  + (_ABSSUB(mousetimings[0].tv_nsec, mousetimings[1].tv_nsec)))
@@ -5855,16 +5984,17 @@ nochange:
 #endif
 			// fallthrough
 		case SEL_NAV_IN: // fallthrough
-		case SEL_GOIN:
+		case SEL_OPEN:
 			/* Cannot descend in empty directories */
 			if (!ndents)
 				goto begin;
 
-			mkpath(path, pdents[cur].name, newpath);
+			pent = &pdents[cur];
+			mkpath(path, pent->name, newpath);
 			DPRINTF_S(newpath);
 
 			/* Visit directory */
-			if (pdents[cur].flags & DIR_OR_LINK_TO_DIR) {
+			if (pent->flags & DIR_OR_LINK_TO_DIR) {
 				if (chdir(newpath) == -1) {
 					printwarn(&presel);
 					goto nochange;
@@ -5888,17 +6018,17 @@ nochange:
 			}
 
 			/* If opened as vim plugin and Enter/^M pressed, pick */
-			if (g_state.picker && sel == SEL_GOIN) {
-				appendfpath(newpath, mkpath(path, pdents[cur].name, newpath));
+			if (g_state.picker && sel == SEL_OPEN) {
+				appendfpath(newpath, mkpath(path, pent->name, newpath));
 				writesel(pselbuf, selbufpos - 1);
 				return EXIT_SUCCESS;
 			}
 
 			if (sel == SEL_NAV_IN) {
 				/* If in listing dir, go to target on `l` or Right on symlink */
-				if (listpath && S_ISLNK(pdents[cur].mode)
+				if (listpath && S_ISLNK(pent->mode)
 				    && is_prefix(path, listpath, xstrlen(listpath))) {
-					if (!realpath(pdents[cur].name, newpath)) {
+					if (!realpath(pent->name, newpath)) {
 						printwarn(&presel);
 						goto nochange;
 					}
@@ -5916,7 +6046,7 @@ nochange:
 
 					cdprep(lastdir, NULL, path, newpath)
 					       ? (presel = FILTER) : (watch = TRUE);
-					xstrsncpy(lastname, pdents[cur].name, NAME_MAX + 1);
+					xstrsncpy(lastname, pent->name, NAME_MAX + 1);
 					goto begin;
 				}
 
@@ -5936,7 +6066,7 @@ nochange:
 					rundir[0] = '\0';
 
 					if (chdir(path) == -1
-					    || !run_selected_plugin(&path, pdents[cur].name,
+					    || !run_selected_plugin(&path, pent->name,
 								    runfile, &lastname, &lastdir)) {
 						DPRINTF_S("plugin failed!");
 					}
@@ -5968,15 +6098,17 @@ nochange:
 				continue;
 			}
 
+			/* Get the extension for regext match */
+			tmp = xextension(pent->name, pent->nlen - 1);
 #ifdef PCRE
-			if (!pcre_exec(archive_pcre, NULL, pdents[cur].name,
-				       xstrlen(pdents[cur].name), 0, 0, NULL, 0)) {
+			if (tmp && !pcre_exec(archive_pcre, NULL, tmp,
+					      pent->nlen - (tmp - pent->name) - 1, 0, 0, NULL, 0)) {
 #else
-			if (!regexec(&archive_re, pdents[cur].name, 0, NULL, 0)) {
+			if (tmp && !regexec(&archive_re, tmp, 0, NULL, 0)) {
 #endif
 				r = get_input(messages[MSG_ARCHIVE_OPTS]);
 				if (r == 'l' || r == 'x') {
-					mkpath(path, pdents[cur].name, newpath);
+					mkpath(path, pent->name, newpath);
 					handle_archive(newpath, r);
 					if (r == 'l') {
 						statusbar(path);
@@ -6135,7 +6267,7 @@ nochange:
 #endif
 			presel = filterentries(path, lastname);
 
-			if (presel == 27) {
+			if (presel == ESC) {
 				presel = 0;
 				break;
 			}
@@ -6251,7 +6383,7 @@ nochange:
 					copycurname();
 				goto nochange;
 			case SEL_EDIT:
-				spawn(editor, pdents[cur].name, NULL, F_CLI);
+				spawn(editor, newpath, NULL, F_CLI);
 				continue;
 			default: /* SEL_LOCK */
 				lock_terminal();
