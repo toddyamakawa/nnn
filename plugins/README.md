@@ -16,11 +16,11 @@ Plugins extend the capabilities of `nnn`. They are _executable_ scripts (or bina
 
 | Plugin (a-z) | Description | Lang | Dependencies |
 | --- | --- | --- | --- |
-| [autojump](autojump) | Navigate to dir/path | sh | autojump |
+| [autojump](autojump) | Navigate to dir/path | sh | [jump](https://github.com/gsamokovarov/jump)/autojump/zoxide |
 | [bookmarks](bookmarks) | Use named bookmarks managed with symlinks | sh | fzf |
 | [boom](boom) | Play random music from dir | sh | [moc](http://moc.daper.net/) |
 | [bulknew](bulknew) | Create multiple files/dirs at once | bash | sed, xargs, mktemp |
-| [dups](dups) | List non-empty duplicate files in current dir | sh | find, md5sum,<br>sort uniq xargs |
+| [dups](dups) | List non-empty duplicate files in current dir | bash | find, md5sum,<br>sort uniq xargs |
 | [chksum](chksum) | Create and verify checksums | sh | md5sum,<br>sha256sum |
 | [diffs](diffs) | Diff for selection (limited to 2 for directories) | sh | vimdiff, mktemp |
 | [dragdrop](dragdrop) | Drag/drop files from/into nnn | sh | [dragon](https://github.com/mwh/dragon) |
@@ -41,7 +41,7 @@ Plugins extend the capabilities of `nnn`. They are _executable_ scripts (or bina
 | [kdeconnect](kdeconnect) | Send selected files to an Android device | sh | kdeconnect-cli |
 | [launch](launch) | GUI application launcher | sh | fzf |
 | [mediainf](mediainf) | Show media information | sh | mediainfo |
-| [mimelist](mimelist) | List files by mime in subtree | sh | fd/find |
+| [mimelist](mimelist) | List files by mime in subtree | sh | - |
 | [moclyrics](moclyrics) | Show lyrics of the track playing in moc | sh | [ddgr](https://github.com/jarun/ddgr), [moc](http://moc.daper.net/) |
 | [mocplay](mocplay) | Append (and/or play) selection/dir/file in moc | sh | [moc](http://moc.daper.net/) |
 | [mp3conv](mp3conv) | Extract audio from multimedia as mp3 | sh | ffmpeg |
@@ -60,6 +60,7 @@ Plugins extend the capabilities of `nnn`. They are _executable_ scripts (or bina
 | [ringtone](ringtone) | Create a variable bitrate mp3 ringtone from file | sh | date, ffmpeg |
 | [splitjoin](splitjoin) | Split file or join selection | sh | split, cat |
 | [suedit](suedit) | Edit file using superuser permissions | sh | sudoedit/sudo/doas |
+| [togglex](togglex) | Toggle executable mode for selection | sh | chmod |
 | [treeview](treeview) | Informative tree output in `$EDITOR` | sh | tree |
 | [uidgid](uidgid) | List user and group of all files in dir | sh | ls, less |
 | [upgrade](upgrade) | Upgrade nnn manually on Debian 9 Stretch | sh | curl |
@@ -93,6 +94,23 @@ Alternatively, combine with <kbd>Alt</kbd> (i.e. <kbd>Alt+key</kbd>).
 To pick and run an unassigned plugin, press <kbd>Enter</kbd> (to _enter_ the plugin dir) at the plugin prompt.
 
 To run a plugin at startup, use the option `-P` followed by the plugin key.
+
+If the plugins list gets too long, try breaking them up into sections:
+
+```
+NNN_PLUG_PERSONAL='g:personal/convert2zoom;p:personal/echo'
+NNN_PLUG_WORK='j:work/prettyjson;d:work/foobar'
+NNN_PLUG_INLINE='e:_go run $nnn*'
+NNN_PLUG_DEFAULT='1:bookmarks;2:ipinfo;p:preview-tui;o:fzz;b:nbak'
+NNN_PLUG="$NNN_PLUG_PERSONAL;$NNN_PLUG_WORK;$NNN_PLUG_DEFAULT;$NNN_PLUG_INLINE"
+export NNN_PLUG
+```
+
+Note:
+- `'g:personal/convert2zoom'` will look in the personal sub-folder inside the plugin folder.
+- `'b:boom;b:bookmarks` will result in only the first definition of *b* (`b:boom`) being used.
+- A keybinding definition of more than 1 character will prevent nnn from starting.
+
 
 #### Skip directory refresh after running a plugin
 

@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2014-2016, Lazaros Koromilas <lostd@2f30.org>
  * Copyright (C) 2014-2016, Dimitris Papastamos <sin@2f30.org>
- * Copyright (C) 2016-2020, Arun Prakash Jana <engineerarun@gmail.com>
+ * Copyright (C) 2016-2021, Arun Prakash Jana <engineerarun@gmail.com>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -87,6 +87,7 @@ enum action {
 	SEL_SEL,
 	SEL_SELMUL,
 	SEL_SELALL,
+	SEL_SELINV,
 	SEL_SELEDIT,
 	SEL_CP,
 	SEL_MV,
@@ -111,10 +112,7 @@ enum action {
 	SEL_QUITCTX,
 	SEL_QUITCD,
 	SEL_QUIT,
-	SEL_QUITFAIL,
-#ifndef NOFIFO
-	SEL_FIFO,
-#endif
+	SEL_QUITERR,
 #ifndef NOMOUSE
 	SEL_CLICK,
 #endif
@@ -213,8 +211,11 @@ static struct key bindings[] = {
 	{ '\t',           SEL_SEL },
 	/* Toggle select multiple files */
 	{ 'm',            SEL_SELMUL },
+	{ CONTROL(' '),   SEL_SELMUL },
 	/* Select all files in current dir */
 	{ 'a',            SEL_SELALL },
+	/* Invert selection in current dir */
+	{ 'A',            SEL_SELINV },
 	/* List, edit selection */
 	{ 'E',            SEL_SELEDIT },
 	/* Copy from selection buffer */
@@ -270,11 +271,7 @@ static struct key bindings[] = {
 	/* Quit */
 	{ CONTROL('Q'),   SEL_QUIT },
 	/* Quit with an error code */
-	{ 'Q',            SEL_QUITFAIL },
-#ifndef NOFIFO
-	/* Send hovered path to NNN_FIFO */
-	{ ESC,            SEL_FIFO },
-#endif
+	{ 'Q',            SEL_QUITERR },
 #ifndef NOMOUSE
 	{ KEY_MOUSE,      SEL_CLICK },
 #endif

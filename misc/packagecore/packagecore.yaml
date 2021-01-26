@@ -1,7 +1,7 @@
 name: nnn
 maintainer: Arun Prakash Jana <engineerarun@gmail.com>
 license: BSD 2-Clause
-summary: The missing terminal file manager for X.
+summary: The unorthodox terminal file manager.
 homepage: https://github.com/jarun/nnn
 commands:
   install:
@@ -74,10 +74,10 @@ packages:
       - make
       - gcc
       - pkg-config
-      - libncursesw5-dev
+      - libncurses-dev
       - libreadline-dev
     deps:
-      - libncursesw5
+      - libncursesw6
       - readline-common
   fedora31:
     builddeps:
@@ -154,7 +154,7 @@ packages:
       - make
       - gcc
       - pkg-config
-      - libncursesw5-dev
+      - libncurses-dev
       - libreadline-dev
     deps:
       - libncursesw6
